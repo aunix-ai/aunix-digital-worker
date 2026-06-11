@@ -26,14 +26,31 @@ class Reasoner(Protocol):
 class RuleBasedReasoner:
     def reason(self, spec, rows, breaches) -> Insight:
         if spec.task_type == "monitoring":
-            return Insight(findings=[self._breach_finding(spec, row, b) for row, b in breaches])
+            findings = [
+                f for row, breach in breaches for f in self._breach_findings(spec, row, breach)
+            ]
+            return Insight(findings=findings)
         return Insight(findings=self._ranked_findings(spec, rows))
 
-    def _breach_finding(self, spec: AgentSpec, row: dict, breach: Breach) -> CandidateFinding:
+    def _breach_findings(self, spec: AgentSpec, row: dict, breach: Breach) -> list[CandidateFinding]:
         key = str(row.get(spec.record_key, "unknown"))
-        fields = ",".join(c.field for c in breach.matched)
+        if spec.conditions and spec.conditions.mode == "all":
+            # all-mode breaches are one composite event; the field set is the full
+            # group, so the key is stable across runs
+            fields = ",".join(sorted(c.field for c in breach.matched))
+            return [self._finding(spec, row, key, f"{key}:all:{fields}", fields)]
+        # any-mode: one finding per matched condition, so an ongoing breach stays
+        # quiet while a newly firing condition still alerts
+        return [
+            self._finding(spec, row, key, f"{key}:{c.field}", c.field)
+            for c in breach.matched
+        ]
+
+    def _finding(
+        self, spec: AgentSpec, row: dict, key: str, dedupe_key: str, fields: str
+    ) -> CandidateFinding:
         return CandidateFinding(
-            dedupe_key=f"{key}:{fields}",
+            dedupe_key=dedupe_key,
             severity="warning",
             summary=f"{key}: condition breach on {fields}",
             recommendation="Review the record and contact the responsible party.",
@@ -42,7 +59,7 @@ class RuleBasedReasoner:
         )
 
     def _ranked_findings(self, spec: AgentSpec, rows: list[dict]) -> list[CandidateFinding]:
-        ranked = sorted(rows, key=lambda r: r.get(spec.rank_by) or 0, reverse=True)
+        ranked = sorted(rows, key=lambda r: _numeric(r.get(spec.rank_by)), reverse=True)
         return [
             CandidateFinding(
                 dedupe_key=f"rank-{i + 1}:{row.get(spec.record_key)}",
@@ -61,3 +78,8 @@ def _jsonable(row: dict) -> dict:
         k: (v.isoformat() if hasattr(v, "isoformat") else v)
         for k, v in row.items()
     }
+
+
+def _numeric(value) -> float:
+    """Non-numeric rank values sort last rather than crashing the run."""
+    return value if isinstance(value, (int, float)) else 0.0
