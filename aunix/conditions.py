@@ -24,13 +24,18 @@ def _matches(cond: Condition, row: dict, now: datetime) -> bool:
     if cond.field not in row:
         return False
     actual = row[cond.field]
-    if cond.operator == "stale_hours":
-        return now - actual > timedelta(hours=float(cond.value))
-    expected = cond.value
-    # a string value naming another column means field-to-field comparison
-    if isinstance(expected, str) and expected in row:
-        expected = row[expected]
     try:
+        if cond.operator == "stale_hours":
+            return now - actual > timedelta(hours=float(cond.value))
+        expected = cond.value
+        # a string value naming another column means field-to-field comparison,
+        # only for ordering operators — eq/ne always compare against the literal
+        if (
+            isinstance(expected, str)
+            and cond.operator in ("gt", "lt", "gte", "lte")
+            and expected in row
+        ):
+            expected = row[expected]
         return _OPS[cond.operator](actual, expected)
     except TypeError:
         return False

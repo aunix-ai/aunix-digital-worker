@@ -49,3 +49,23 @@ def test_all_mode_requires_every_condition():
 def test_missing_field_does_not_match():
     g = group("any", Condition(field="absent", operator="gt", value=1))
     assert evaluate(g, {"amount": 5}, now=NOW) is None
+
+
+def test_stale_hours_tolerates_dirty_timestamps():
+    g = group("any", Condition(field="last_tracking_update", operator="stale_hours", value=48))
+    naive = {"last_tracking_update": datetime(2026, 6, 1, 12, 0)}  # no tzinfo
+    assert evaluate(g, naive, now=NOW) is None
+    assert evaluate(g, {"last_tracking_update": None}, now=NOW) is None
+
+
+def test_eq_compares_literal_even_if_column_name_collides():
+    g = group("any", Condition(field="priority", operator="eq", value="high"))
+    row = {"priority": "high", "high": "something-else"}
+    breach = evaluate(g, row, now=NOW)
+    assert breach is not None  # literal match must win; no field-to-field hijack
+
+
+def test_ne_operator():
+    g = group("any", Condition(field="status", operator="ne", value="in_transit"))
+    assert evaluate(g, {"status": "in_transit"}, now=NOW) is None
+    assert evaluate(g, {"status": "customs_hold"}, now=NOW) is not None
