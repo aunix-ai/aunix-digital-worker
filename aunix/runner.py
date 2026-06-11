@@ -41,7 +41,13 @@ def execute_run(
         for source in spec.data_sources:
             if source not in connectors:
                 raise RuntimeError(f"no connector configured for data source {source!r}")
-            rows.extend(connectors[source].fetch())
+            connector = connectors[source]
+            if connector.source_id != source:
+                raise RuntimeError(
+                    f"connector registered under {source!r} reports source_id "
+                    f"{connector.source_id!r}"
+                )
+            rows.extend(connector.fetch())
         trace["rows_fetched"] = len(rows)
 
         breaches: list[tuple[dict, Breach]] = []

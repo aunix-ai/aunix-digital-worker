@@ -156,3 +156,13 @@ def test_missing_connector_records_clear_error(session):
     run = run_once(session, agent, {})  # no connectors at all
     assert run.status == "failed"
     assert "no connector configured for data source 'simship'" in run.error
+
+
+def test_misregistered_connector_fails_loudly(session, tmp_path):
+    sim = SimShip(tmp_path / "s.json", now=lambda: NOW)  # source_id is "simship"
+    agent = make_agent(session, data_sources=["wrong-name"])
+
+    run = run_once(session, agent, {"wrong-name": sim})
+
+    assert run.status == "failed"
+    assert "source_id" in run.error
