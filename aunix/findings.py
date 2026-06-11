@@ -45,6 +45,8 @@ def reconcile(
     result = ReconcileResult()
     seen_keys: set[str] = set()
     for cand in current:
+        if cand.dedupe_key in seen_keys:
+            continue  # same breach reported twice in one run — first occurrence wins
         seen_keys.add(cand.dedupe_key)
         existing = open_by_key.get(cand.dedupe_key)
         if existing:
