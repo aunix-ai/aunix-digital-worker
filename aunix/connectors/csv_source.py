@@ -16,7 +16,9 @@ class CsvConnector:
             ]
 
 
-def _coerce(value: str) -> float | str:
+def _coerce(value: str | None) -> float | str | None:
+    if value is None:
+        return None
     try:
         return float(value)
     except ValueError:
