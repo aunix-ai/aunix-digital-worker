@@ -3,7 +3,7 @@ from datetime import datetime, timezone
 from sqlalchemy import select
 
 from aunix.connectors.simship import SimShip
-from aunix.models import Agent, Notification
+from aunix.models import Agent, Finding, Notification
 from aunix.notifier import FeedNotifier
 from aunix.reasoning import RuleBasedReasoner
 from aunix.runner import execute_run
@@ -99,3 +99,60 @@ def test_analysis_run_briefs_every_run(session, tmp_path):
     assert notification_count(session) == 2
     run_once(session, agent, connectors)
     assert notification_count(session) == 4  # briefing repeats every run by design
+
+
+class BoomNotifier:
+    channel = "feed"
+
+    def send(self, finding, spec):
+        raise RuntimeError("smtp down")
+
+
+def test_notifier_failure_does_not_persist_phantom_findings(session, tmp_path):
+    sim = SimShip(tmp_path / "s.json", now=lambda: NOW)
+    sim.slip_delivery("PO-4567", days=2)
+    agent = make_agent(session)
+
+    run = execute_run(
+        session, agent, {"simship": sim}, RuleBasedReasoner(), [BoomNotifier()], now=NOW
+    )
+
+    assert run.status == "failed"
+    assert "smtp down" in run.error
+    assert session.scalars(select(Finding)).all() == []  # no phantom finding
+
+    # the breach must still alert once the notifier recovers
+    run2 = run_once(session, agent, {"simship": sim})
+    assert run2.status == "succeeded"
+    assert notification_count(session) == 1
+
+
+def test_notifiers_filtered_by_spec_channels(session, tmp_path):
+    class WrongChannel:
+        channel = "email"
+
+        def send(self, finding, spec):
+            raise AssertionError("must not be called: email not in spec channels")
+
+    sim = SimShip(tmp_path / "s.json", now=lambda: NOW)
+    sim.slip_delivery("PO-4567", days=2)
+    agent = make_agent(session)  # spec channels = ["feed"]
+
+    run = execute_run(
+        session,
+        agent,
+        {"simship": sim},
+        RuleBasedReasoner(),
+        [FeedNotifier(session), WrongChannel()],
+        now=NOW,
+    )
+
+    assert run.status == "succeeded"
+    assert notification_count(session) == 1
+
+
+def test_missing_connector_records_clear_error(session):
+    agent = make_agent(session)
+    run = run_once(session, agent, {})  # no connectors at all
+    assert run.status == "failed"
+    assert "no connector configured for data source 'simship'" in run.error

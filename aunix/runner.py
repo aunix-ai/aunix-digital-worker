@@ -24,15 +24,23 @@ def execute_run(
     trigger: str = "manual",
     now: datetime,
 ) -> Run:
+    """Execute one agent run and return the persisted Run record.
+
+    Commits the session on success or failure; the caller owns the session
+    lifecycle but must not commit or rollback after this returns.
+    """
     run = Run(agent_id=agent.id, trigger=trigger, started_at=now)
     session.add(run)
     session.flush()
+    run_id = run.id
 
     spec = AgentSpec.model_validate(agent.spec)
     trace: dict = {}
     try:
         rows: list[dict] = []
         for source in spec.data_sources:
+            if source not in connectors:
+                raise RuntimeError(f"no connector configured for data source {source!r}")
             rows.extend(connectors[source].fetch())
         trace["rows_fetched"] = len(rows)
 
@@ -64,13 +72,22 @@ def execute_run(
                 notifier.send(finding, spec)
 
         run.status = "succeeded"
+        run.trace = trace
+        run.finished_at = now
+        session.commit()
     except Exception as exc:
+        # discard any half-applied findings/notifications, then record the
+        # failed run on a clean session
+        session.rollback()
+        run = session.get(Run, run_id)
+        if run is None:  # the Run insert itself was rolled back
+            run = Run(id=run_id, agent_id=agent.id, trigger=trigger, started_at=now)
+            session.add(run)
         run.status = "failed"
         run.error = str(exc)
-
-    run.trace = trace
-    run.finished_at = now
-    session.commit()
+        run.trace = trace
+        run.finished_at = now
+        session.commit()
     return run
 
 
