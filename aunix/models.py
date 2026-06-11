@@ -1,6 +1,6 @@
 from datetime import datetime, timezone
 
-from sqlalchemy import JSON, DateTime, ForeignKey, String, Text
+from sqlalchemy import JSON, DateTime, ForeignKey, Index, String, Text
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
 
@@ -35,6 +35,10 @@ class Run(Base):
 
 class Finding(Base):
     __tablename__ = "findings"
+    __table_args__ = (
+        Index("ix_findings_agent_state", "agent_id", "state"),
+        Index("ix_findings_agent_dedupe", "agent_id", "dedupe_key"),
+    )
     id: Mapped[int] = mapped_column(primary_key=True)
     agent_id: Mapped[int] = mapped_column(ForeignKey("agents.id"))
     run_id: Mapped[int] = mapped_column(ForeignKey("runs.id"))
