@@ -1,0 +1,66 @@
+from datetime import datetime, timezone
+
+from sqlalchemy import JSON, DateTime, ForeignKey, String, Text
+from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
+
+
+def utcnow() -> datetime:
+    return datetime.now(timezone.utc)
+
+
+class Base(DeclarativeBase):
+    pass
+
+
+class Agent(Base):
+    __tablename__ = "agents"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    owner: Mapped[str] = mapped_column(String(255))
+    status: Mapped[str] = mapped_column(String(20), default="draft")  # draft|active|paused
+    spec: Mapped[dict] = mapped_column(JSON)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+
+class Run(Base):
+    __tablename__ = "runs"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    agent_id: Mapped[int] = mapped_column(ForeignKey("agents.id"))
+    trigger: Mapped[str] = mapped_column(String(20))  # interval|daily|manual
+    status: Mapped[str] = mapped_column(String(20), default="running")  # running|succeeded|failed
+    started_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    trace: Mapped[dict] = mapped_column(JSON, default=dict)  # explainability backbone
+    error: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+
+class Finding(Base):
+    __tablename__ = "findings"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    agent_id: Mapped[int] = mapped_column(ForeignKey("agents.id"))
+    run_id: Mapped[int] = mapped_column(ForeignKey("runs.id"))
+    dedupe_key: Mapped[str] = mapped_column(String(255))
+    state: Mapped[str] = mapped_column(String(20), default="new")  # new|ongoing|resolved
+    severity: Mapped[str] = mapped_column(String(20), default="info")
+    summary: Mapped[str] = mapped_column(Text)
+    recommendation: Mapped[str] = mapped_column(Text, default="")
+    source_ref: Mapped[str] = mapped_column(String(500), default="")
+    details: Mapped[dict] = mapped_column(JSON, default=dict)
+    first_seen_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    last_seen_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+
+class Notification(Base):
+    __tablename__ = "notifications"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    finding_id: Mapped[int] = mapped_column(ForeignKey("findings.id"))
+    channel: Mapped[str] = mapped_column(String(20))  # feed|email
+    status: Mapped[str] = mapped_column(String(20), default="pending")  # pending|sent|failed
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+
+class Connection(Base):
+    __tablename__ = "connections"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    provider: Mapped[str] = mapped_column(String(50))  # hubspot|simship|csv
+    credentials: Mapped[dict] = mapped_column(JSON, default=dict)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
