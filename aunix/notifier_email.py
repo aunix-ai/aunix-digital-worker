@@ -2,6 +2,7 @@
 'failed' Notification row instead of raising - the run already produced the
 finding and the in-app feed carries it; email is best-effort delivery."""
 import logging
+from html import escape
 
 import httpx
 from sqlalchemy.orm import Session
@@ -48,9 +49,9 @@ class EmailNotifier:
 
     def _render(self, finding: Finding, spec: AgentSpec) -> str:
         return (
-            f"<h2>{finding.summary}</h2>"
-            f"<p><strong>Recommended action:</strong> {finding.recommendation}</p>"
-            f"<p><strong>Source:</strong> {finding.source_ref}</p>"
-            f"<p>Agent: {spec.name} &mdash; severity {finding.severity}. "
+            f"<h2>{escape(finding.summary)}</h2>"
+            f"<p><strong>Recommended action:</strong> {escape(finding.recommendation)}</p>"
+            f"<p><strong>Source:</strong> {escape(finding.source_ref)}</p>"
+            f"<p>Agent: {escape(spec.name)} &mdash; severity {finding.severity}. "
             f"Run #{finding.run_id} has the full decision trace.</p>"
         )

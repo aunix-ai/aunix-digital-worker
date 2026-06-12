@@ -59,3 +59,19 @@ def test_delivery_failure_records_failed_and_does_not_raise(session):
 
     note = session.scalars(select(Notification)).one()
     assert note.status == "failed"
+
+
+def test_html_in_finding_fields_is_escaped(session):
+    finding = seed_finding(session)
+    finding.summary = 'PO <a href="https://evil.example">click</a>'
+    session.flush()
+    captured = {}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        import json
+        captured.update(json.loads(request.content))
+        return httpx.Response(200, json={"id": "email-1"})
+
+    make_notifier(session, handler).send(finding, email_spec())
+    assert "<a href" not in captured["html"].replace("&lt;", "<", 0)  # raw tag must not appear
+    assert "&lt;a href" in captured["html"]
