@@ -2,7 +2,7 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { api } from "@/lib/api";
-import type { AgentSpec } from "@/lib/types";
+import type { AgentSpec, ClarifyingQuestion } from "@/lib/types";
 import { PlanSummary } from "@/components/PlanSummary";
 import { Button, ErrorNote, PageTitle, Panel } from "@/components/ui";
 
@@ -14,25 +14,41 @@ const EXAMPLES = [
 export default function CreatePage() {
   const router = useRouter();
   const [text, setText] = useState("");
+  // answer lines accumulated across clarifying rounds, folded back into the prompt
+  const [history, setHistory] = useState<string[]>([]);
   const [busy, setBusy] = useState(false);
   const [spec, setSpec] = useState<AgentSpec | null>(null);
-  const [questions, setQuestions] = useState<string[]>([]);
+  const [questions, setQuestions] = useState<ClarifyingQuestion[]>([]);
+  const [answers, setAnswers] = useState<Record<string, string>>({});
   const [error, setError] = useState<string | null>(null);
 
-  async function compile() {
+  async function interpret(baseHistory: string[], extraLines: string[]) {
     setBusy(true);
     setError(null);
     setSpec(null);
     setQuestions([]);
+    const all = [...baseHistory, ...extraLines];
+    const prompt = all.length ? `${text}\n\nAdditional details:\n${all.join("\n")}` : text;
     try {
-      const result = await api.compile(text);
+      const result = await api.compile(prompt);
+      setHistory(all);
       setSpec(result.spec);
       setQuestions(result.questions);
+      setAnswers({});
     } catch (e) {
       setError(String(e));
     } finally {
       setBusy(false);
     }
+  }
+
+  function answerLines(): string[] {
+    return questions
+      .map((q) => {
+        const a = answers[q.text]?.trim();
+        return a ? `- ${q.text} ${a}` : null;
+      })
+      .filter((x): x is string => x !== null);
   }
 
   async function confirm() {
@@ -47,6 +63,8 @@ export default function CreatePage() {
       setBusy(false);
     }
   }
+
+  const answeredCount = answerLines().length;
 
   return (
     <div className="space-y-6">
@@ -68,10 +86,14 @@ export default function CreatePage() {
           placeholder="e.g. Watch my active POs and alert me when a delivery date slips…"
         />
         <div className="flex flex-wrap items-center gap-2">
-          <Button onClick={compile} variant="primary" disabled={busy || text.trim().length === 0}>
-            {busy && !spec ? "Interpreting…" : "Interpret"}
+          <Button
+            onClick={() => interpret([], [])}
+            variant="primary"
+            disabled={busy || text.trim().length === 0}
+          >
+            {busy ? "Interpreting…" : "Interpret"}
           </Button>
-          {!spec && !busy && (
+          {!spec && questions.length === 0 && !busy && (
             <div className="flex flex-wrap gap-1.5">
               {EXAMPLES.map((ex, i) => (
                 <button
@@ -90,19 +112,64 @@ export default function CreatePage() {
       {error && <ErrorNote message={error} />}
 
       {questions.length > 0 && (
-        <Panel className="rise border-warn/35 p-5">
-          <p className="text-sm font-medium text-warn">A bit more detail needed</p>
-          <p className="mt-0.5 text-sm text-muted">
-            Add these to your description and interpret again:
-          </p>
-          <ul className="mt-3 space-y-1.5">
-            {questions.map((q, i) => (
-              <li key={i} className="flex gap-2.5 text-sm text-ink">
-                <span className="mt-2 size-1 shrink-0 rounded-full bg-warn" />
-                {q}
-              </li>
+        <Panel className="rise overflow-hidden">
+          <div className="flex items-center gap-2 border-b border-line px-5 py-3.5">
+            <span className="size-1.5 rounded-full bg-warn" />
+            <p className="text-sm font-medium text-ink">A few details to pin down</p>
+          </div>
+          <div className="divide-y divide-line">
+            {questions.map((q) => (
+              <fieldset key={q.text} className="px-5 py-4">
+                <legend className="text-sm text-ink">{q.text}</legend>
+                <div className="mt-2.5">
+                  {q.choices.length > 0 ? (
+                    <div className="flex flex-wrap gap-1.5">
+                      {q.choices.map((choice) => {
+                        const selected = answers[q.text] === choice;
+                        return (
+                          <button
+                            key={choice}
+                            type="button"
+                            aria-pressed={selected}
+                            onClick={() =>
+                              setAnswers((a) => ({ ...a, [q.text]: choice }))
+                            }
+                            className={`rounded-full border px-3 py-1 text-xs transition-colors ${
+                              selected
+                                ? "border-accent bg-accent/12 text-accent"
+                                : "border-line text-muted hover:border-line2 hover:text-ink"
+                            }`}
+                          >
+                            {choice}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  ) : (
+                    <input
+                      type={q.kind === "email" ? "email" : "text"}
+                      value={answers[q.text] ?? ""}
+                      onChange={(e) =>
+                        setAnswers((a) => ({ ...a, [q.text]: e.target.value }))
+                      }
+                      placeholder={q.kind === "email" ? "name@company.com" : "Your answer"}
+                      className="w-full max-w-md rounded-md border border-line bg-bg px-3 py-2 text-sm text-ink placeholder:text-faint transition-colors focus:border-line2"
+                    />
+                  )}
+                </div>
+              </fieldset>
             ))}
-          </ul>
+          </div>
+          <div className="flex flex-wrap items-center gap-3 border-t border-line px-5 py-4">
+            <Button onClick={() => interpret(history, answerLines())} variant="primary" disabled={busy}>
+              {busy ? "Interpreting…" : "Interpret with answers"}
+            </Button>
+            <span className="text-xs text-faint">
+              {answeredCount > 0
+                ? `${answeredCount} of ${questions.length} answered`
+                : "Answer what you can — Aunix fills sensible defaults for the rest."}
+            </span>
+          </div>
         </Panel>
       )}
 

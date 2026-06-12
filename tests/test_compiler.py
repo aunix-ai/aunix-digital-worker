@@ -1,6 +1,6 @@
 from pydantic import ValidationError
 
-from aunix.compiler import CompiledIntent, compile_intent
+from aunix.compiler import ClarifyingQuestion, CompiledIntent, compile_intent
 from aunix.llm import FakeLlm
 from aunix.testing import make_spec
 
@@ -13,11 +13,16 @@ def test_clear_intent_compiles_to_spec():
     assert result.questions == []
 
 
-def test_ambiguous_intent_returns_clarifying_questions():
-    fake = FakeLlm([CompiledIntent(clarifying_questions=["Which data source holds your POs?"])])
+def test_ambiguous_intent_returns_structured_clarifying_questions():
+    fake = FakeLlm([CompiledIntent(clarifying_questions=[
+        ClarifyingQuestion(text="Which data source holds your POs?",
+                           choices=["simship", "hubspot", "csv"])
+    ])])
     result = compile_intent(fake, "watch my stuff")
     assert result.spec is None
-    assert result.questions == ["Which data source holds your POs?"]
+    assert result.questions[0].text == "Which data source holds your POs?"
+    assert result.questions[0].choices == ["simship", "hubspot", "csv"]
+    assert result.questions[0].kind == "text"
 
 
 def test_validation_failure_retries_once_with_error_feedback():
@@ -34,12 +39,13 @@ def test_validation_failure_retries_once_with_error_feedback():
 
 
 def test_spec_with_questions_resolves_to_questions_win():
-    intent = CompiledIntent(spec=make_spec(), clarifying_questions=["What schedule?"])
+    q = ClarifyingQuestion(text="What schedule?")
+    intent = CompiledIntent(spec=make_spec(), clarifying_questions=[q])
     assert intent.spec is None
-    fake = FakeLlm([CompiledIntent(spec=make_spec(), clarifying_questions=["What schedule?"])])
+    fake = FakeLlm([CompiledIntent(spec=make_spec(), clarifying_questions=[q])])
     result = compile_intent(fake, "watch things")
     assert result.spec is None
-    assert result.questions == ["What schedule?"]
+    assert [x.text for x in result.questions] == ["What schedule?"]
 
 
 def test_double_validation_failure_degrades_to_question():

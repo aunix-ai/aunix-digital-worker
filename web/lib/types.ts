@@ -28,4 +28,9 @@ export interface RunOut {
 export interface FeedItem {
   id: number; channel: string; status: string; created_at: string | null; finding: Finding;
 }
-export interface CompileResult { spec: AgentSpec | null; questions: string[] }
+export interface ClarifyingQuestion {
+  text: string;
+  choices: string[];
+  kind: "text" | "email";
+}
+export interface CompileResult { spec: AgentSpec | null; questions: ClarifyingQuestion[] }
