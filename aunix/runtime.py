@@ -11,7 +11,7 @@ from aunix.connectors.base import Connector
 from aunix.connectors.csv_source import CsvConnector
 from aunix.connectors.hubspot import HubSpotConnector
 from aunix.connectors.simship import SimShip
-from aunix.llm import AnthropicLlm
+from aunix.llm import OpenAiLlm
 from aunix.models import Connection
 from aunix.notifier import FeedNotifier, Notifier
 from aunix.notifier_email import EmailNotifier
@@ -22,7 +22,7 @@ from aunix.reasoning_llm import LlmReasoner
 class Runtime:
     def __init__(self, settings: Settings, reasoner: Reasoner | None = None):
         self.settings = settings
-        self.reasoner = reasoner or LlmReasoner(AnthropicLlm(model=settings.llm_model))
+        self.reasoner = reasoner or LlmReasoner(OpenAiLlm(model=settings.llm_model))
 
     def connectors(self, session: Session) -> dict[str, Connector]:
         Path(self.settings.simship_state_path).parent.mkdir(parents=True, exist_ok=True)

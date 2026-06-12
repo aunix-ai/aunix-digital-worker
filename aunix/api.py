@@ -15,7 +15,7 @@ from sqlalchemy import select
 from aunix.compiler import CompileResult, compile_intent
 from aunix.config import Settings
 from aunix.db import make_engine, make_session_factory
-from aunix.llm import AnthropicLlm, LlmClient, LlmError
+from aunix.llm import LlmClient, LlmError, OpenAiLlm
 from aunix.models import Agent, Base, Connection, Finding, Notification, Run
 from aunix.runtime import Runtime
 from aunix.spec import AgentSpec
@@ -191,7 +191,7 @@ def create_default_app() -> FastAPI:
     Base.metadata.create_all(engine)
     return create_app(
         session_factory=make_session_factory(engine),
-        llm=AnthropicLlm(model=settings.llm_model),
+        llm=OpenAiLlm(model=settings.llm_model),
         runtime=Runtime(settings),
         upload_dir=Path(settings.upload_dir),
         cors_origins=settings.api_cors_origins,

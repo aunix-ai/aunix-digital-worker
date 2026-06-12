@@ -12,23 +12,30 @@ an LLM, and alert via the in-app feed and email - exactly once per issue.
     # demo (no API key needed - rule-based reasoner):
     uv run python -m aunix.demo
 
-    # product surface:
-    export ANTHROPIC_API_KEY=sk-ant-...
+    # product surface (LLM runs on OpenAI; see .env):
+    export OPENAI_API_KEY=sk-proj-...   # or put it in .env
     uv run uvicorn "aunix.api:create_default_app" --factory --reload  # API on :8000
     uv run python -m aunix.worker                                     # scheduler worker
 
-## Configuration (env / .env, prefix AUNIX_)
+## Configuration
+
+The LLM runs on OpenAI's Responses API. `OPENAI_API_KEY` is read by the OpenAI
+SDK directly; `OPENAI_MODEL` sets the compiler/reasoner model. Everything else is
+prefixed `AUNIX_` (env vars or `.env`).
 
 | Var | Default | Purpose |
 |---|---|---|
+| OPENAI_API_KEY | - | OpenAI credential (read by the SDK) |
+| OPENAI_MODEL | gpt-5.1 | Compiler/reasoner model (alias of AUNIX_LLM_MODEL) |
 | AUNIX_DATABASE_URL | sqlite:///aunix.db | SQLAlchemy URL (Postgres in prod) |
-| AUNIX_LLM_MODEL | claude-opus-4-8 | Compiler/reasoner model |
 | AUNIX_RESEND_API_KEY | - | Enables the email channel |
 | AUNIX_EMAIL_FROM | alerts@aunix.local | Email sender |
 | AUNIX_HUBSPOT_ACCESS_TOKEN | - | Enables the hubspot data source |
 | AUNIX_SIMSHIP_STATE_PATH | data/simship.json | Simulated shipment feed state |
 
-ANTHROPIC_API_KEY resolves via the Anthropic SDK's standard chain.
+The LLM seam (`aunix/llm.py`) ships `OpenAiLlm` (default) and `AnthropicLlm` as
+drop-in alternates behind the `LlmClient` protocol; tests use `FakeLlm` and never
+touch a live API.
 
 ## API sketch
 

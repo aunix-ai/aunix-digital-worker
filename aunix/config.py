@@ -1,4 +1,7 @@
-"""Runtime configuration. All knobs come from AUNIX_* env vars or .env."""
+"""Runtime configuration. Most knobs come from AUNIX_* env vars or .env; the LLM
+model also accepts the bare OPENAI_MODEL var so it lines up with the OpenAI SDK's
+own OPENAI_API_KEY."""
+from pydantic import AliasChoices, Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -6,8 +9,11 @@ class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_prefix="AUNIX_", env_file=".env", extra="ignore")
 
     database_url: str = "sqlite:///aunix.db"
-    llm_model: str = "claude-opus-4-8"
-    # Anthropic credentials resolve via the SDK's own chain (ANTHROPIC_API_KEY etc.)
+    # OpenAI credentials resolve via the SDK's own chain (OPENAI_API_KEY).
+    llm_model: str = Field(
+        default="gpt-5.1",
+        validation_alias=AliasChoices("AUNIX_LLM_MODEL", "OPENAI_MODEL"),
+    )
     resend_api_key: str | None = None
     email_from: str = "alerts@aunix.local"
     hubspot_access_token: str | None = None

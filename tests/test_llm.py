@@ -22,6 +22,51 @@ def test_fake_llm_raises_queued_exceptions():
     assert fake.parse(system="s", prompt="p", schema=Out).answer == "ok"
 
 
+def test_openai_returns_parsed_output():
+    from aunix.llm import OpenAiLlm
+
+    class FakeResponses:
+        def parse(self, **kwargs):
+            return type("R", (), {"output_parsed": Out(answer="hi"), "status": "completed"})()
+
+    class FakeClient:
+        responses = FakeResponses()
+
+    llm = OpenAiLlm(client=FakeClient())
+    assert llm.parse(system="s", prompt="p", schema=Out).answer == "hi"
+
+
+def test_openai_missing_output_raises_llm_error():
+    from aunix.llm import OpenAiLlm
+
+    class FakeResponses:
+        def parse(self, **kwargs):
+            return type("R", (), {"output_parsed": None, "status": "incomplete"})()
+
+    class FakeClient:
+        responses = FakeResponses()
+
+    with pytest.raises(LlmError):
+        OpenAiLlm(client=FakeClient()).parse(system="s", prompt="p", schema=Out)
+
+
+def test_openai_api_errors_are_wrapped():
+    import httpx
+    import openai
+
+    from aunix.llm import OpenAiLlm
+
+    class BoomResponses:
+        def parse(self, **kwargs):
+            raise openai.APIConnectionError(request=httpx.Request("GET", "http://x"))
+
+    class BoomClient:
+        responses = BoomResponses()
+
+    with pytest.raises(LlmError):
+        OpenAiLlm(client=BoomClient()).parse(system="s", prompt="p", schema=Out)
+
+
 def test_anthropic_api_errors_are_wrapped(monkeypatch):
     import httpx
     import anthropic

@@ -1,10 +1,11 @@
-"""LLM seam. AnthropicLlm is the production implementation (official SDK,
-structured outputs via messages.parse). FakeLlm drives offline tests. An
-agentu-backed implementation can satisfy the same protocol when L3+ execution
-agents need a sandboxed runtime."""
+"""LLM seam. OpenAiLlm is the production implementation (official SDK, structured
+outputs via the Responses API). AnthropicLlm is a drop-in alternate. FakeLlm
+drives offline tests — it is provider-agnostic, so the test suite never touches a
+live API regardless of which implementation is wired."""
 from typing import Protocol, TypeVar
 
 import anthropic
+import openai
 from pydantic import BaseModel
 
 T = TypeVar("T", bound=BaseModel)
@@ -16,6 +17,29 @@ class LlmError(Exception):
 
 class LlmClient(Protocol):
     def parse(self, *, system: str, prompt: str, schema: type[T]) -> T: ...
+
+
+class OpenAiLlm:
+    """Production LLM via OpenAI's Responses API. Credentials resolve through the
+    SDK's own chain (OPENAI_API_KEY); the model comes from settings (OPENAI_MODEL)."""
+
+    def __init__(self, model: str = "gpt-5.1", client: "openai.OpenAI | None" = None):
+        self.model = model
+        self.client = client or openai.OpenAI()
+
+    def parse(self, *, system: str, prompt: str, schema: type[T]) -> T:
+        try:
+            response = self.client.responses.parse(
+                model=self.model,
+                instructions=system,
+                input=prompt,
+                text_format=schema,
+            )
+        except openai.APIError as exc:
+            raise LlmError(str(exc)) from exc
+        if response.output_parsed is None:
+            raise LlmError(f"no structured output (status={response.status})")
+        return response.output_parsed
 
 
 class AnthropicLlm:
