@@ -36,3 +36,20 @@ POST /agents/compile {text} -> {spec | questions}
 POST /agents {owner, spec} -> draft; POST /agents/{id}/activate | /pause | /run
 GET /agents, /agents/{id}, /agents/{id}/runs, /runs/{id} (decision trace), /feed
 POST /uploads/csv (multipart)
+
+## Web UI
+
+An operations-console front end (Next.js + Tailwind v4, dark instrument-grade
+theme). Design direction is captured in `PRODUCT.md` and `DESIGN.md`.
+
+    cd web
+    npm install
+    npm run dev        # http://localhost:3000 (API must be on :8000)
+    npm test           # component tests (vitest)
+
+Set `NEXT_PUBLIC_API_URL` (default `http://localhost:8000`) to point at the API,
+and make sure that origin is in `AUNIX_API_CORS_ORIGINS`.
+
+Pages: `/` (agents + lifecycle controls), `/create` (conversational creation
+with plan confirmation), `/feed` (activity feed with "why?" links), `/runs/{id}`
+(decision trace + data evaluated), `/agents/{id}` (plan, run history).
