@@ -8,3 +8,7 @@ dist/
 .env
 web/node_modules/
 web/.next/
+
+# runtime state (the seeded sample report under data/ stays tracked)
+data/simship.json
+data/uploads/

@@ -1,26 +1,128 @@
 @import "tailwindcss";
 
-:root {
-  --background: #ffffff;
-  --foreground: #171717;
+/* ───────────────────────── Design tokens (operations console, dark) ─────────────────────────
+   See DESIGN.md. OKLCH throughout. One cyan accent; severity is the only committed color. */
+@theme {
+  --color-bg: oklch(0.17 0.013 248);
+  --color-surface: oklch(0.205 0.015 248);
+  --color-raise: oklch(0.245 0.016 248);
+  --color-line: oklch(0.32 0.016 248);
+  --color-line2: oklch(0.4 0.018 248);
+  --color-ink: oklch(0.97 0.004 248);
+  --color-muted: oklch(0.74 0.012 248);
+  --color-faint: oklch(0.6 0.012 248);
+
+  --color-accent: oklch(0.8 0.125 200);
+  --color-accent-hi: oklch(0.86 0.12 200);
+  --color-accent-ink: oklch(0.2 0.02 220);
+
+  --color-warn: oklch(0.83 0.13 78);
+  --color-crit: oklch(0.72 0.19 22);
+  --color-ok: oklch(0.8 0.14 158);
+
+  --font-sans: var(--font-geist-sans), ui-sans-serif, system-ui, sans-serif;
+  --font-mono: var(--font-geist-mono), ui-monospace, monospace;
+
+  --radius-panel: 0.625rem;
+
+  --ease-out-quint: cubic-bezier(0.22, 1, 0.36, 1);
 }
 
-@theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
-}
+@layer base {
+  * {
+    border-color: var(--color-line);
+  }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
+  html {
+    color-scheme: dark;
+  }
+
+  body {
+    background-color: var(--color-bg);
+    /* faint dotted-grid texture — the "console" surface */
+    background-image: radial-gradient(
+      oklch(0.32 0.016 248 / 0.4) 1px,
+      transparent 1px
+    );
+    background-size: 22px 22px;
+    background-position: -1px -1px;
+    color: var(--color-ink);
+    font-family: var(--font-sans);
+    -webkit-font-smoothing: antialiased;
+    text-rendering: optimizeLegibility;
+  }
+
+  ::selection {
+    background-color: oklch(0.8 0.125 200 / 0.3);
+  }
+
+  :focus-visible {
+    outline: 2px solid var(--color-accent);
+    outline-offset: 2px;
+    border-radius: 3px;
+  }
+
+  /* thin console scrollbars */
+  ::-webkit-scrollbar {
+    width: 10px;
+    height: 10px;
+  }
+  ::-webkit-scrollbar-track {
+    background: transparent;
+  }
+  ::-webkit-scrollbar-thumb {
+    background: var(--color-line2);
+    border-radius: 6px;
+    border: 2px solid var(--color-bg);
+  }
+  ::-webkit-scrollbar-thumb:hover {
+    background: var(--color-faint);
   }
 }
 
-body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+/* ───────────────────────── Motion ───────────────────────── */
+@keyframes rise {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@keyframes pulse-ring {
+  0% {
+    box-shadow: 0 0 0 0 color-mix(in oklch, currentColor 55%, transparent);
+  }
+  70% {
+    box-shadow: 0 0 0 4px transparent;
+  }
+  100% {
+    box-shadow: 0 0 0 0 transparent;
+  }
+}
+
+@utility rise {
+  opacity: 0;
+  animation: rise 0.42s var(--ease-out-quint) forwards;
+}
+
+@utility pulse-ring {
+  animation: pulse-ring 2.6s ease-out infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+  }
+  .rise {
+    opacity: 1;
+    transform: none;
+  }
 }

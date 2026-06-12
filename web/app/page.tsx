@@ -4,57 +4,113 @@ import Link from "next/link";
 import { api } from "@/lib/api";
 import type { AgentOut } from "@/lib/types";
 import { StatusBadge } from "@/components/StatusBadge";
+import { Button, ButtonLink, ErrorNote, PageTitle, Panel, SkeletonRows } from "@/components/ui";
+
+function scheduleLabel(s: AgentOut["spec"]["schedule"]): string {
+  if (s.mode === "interval") return `every ${s.interval_minutes}m`;
+  if (s.mode === "daily") return `daily ${s.daily_time}`;
+  return "on demand";
+}
 
 export default function AgentsPage() {
   const [agents, setAgents] = useState<AgentOut[] | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [pending, setPending] = useState<number | null>(null);
 
   const refresh = useCallback(() => {
     api.listAgents().then(setAgents).catch((e) => setError(String(e)));
   }, []);
   useEffect(refresh, [refresh]);
 
-  async function act(fn: () => Promise<unknown>) {
+  async function act(id: number, fn: () => Promise<unknown>) {
+    setPending(id);
+    setError(null);
     try {
       await fn();
       refresh();
     } catch (e) {
       setError(String(e));
+    } finally {
+      setPending(null);
     }
   }
 
-  if (error) return <p className="text-red-600">{error}</p>;
-  if (!agents) return <p>Loading…</p>;
-  if (agents.length === 0)
-    return (
-      <p className="text-slate-600">
-        No agents yet. <Link href="/create" className="text-blue-600 underline">Create your first digital worker.</Link>
-      </p>
-    );
-
   return (
-    <div className="space-y-3">
-      <h1 className="text-xl font-semibold">Agents</h1>
-      {agents.map((a) => (
-        <div key={a.id} className="flex items-center justify-between rounded border bg-white p-4">
-          <div>
-            <Link href={`/agents/${a.id}`} className="font-medium hover:underline">{a.spec.name}</Link>
-            <p className="text-sm text-slate-600">{a.spec.objective}</p>
-            <p className="text-xs text-slate-500">
-              {a.spec.task_type} · {a.spec.data_sources.join(", ")} · {a.spec.schedule.mode}
-            </p>
-          </div>
-          <div className="flex items-center gap-2">
-            <StatusBadge value={a.status} />
-            {a.status === "active" ? (
-              <button onClick={() => act(() => api.pause(a.id))} className="rounded border px-2 py-1 text-sm">Pause</button>
-            ) : (
-              <button onClick={() => act(() => api.activate(a.id))} className="rounded border px-2 py-1 text-sm">Activate</button>
-            )}
-            <button onClick={() => act(() => api.runNow(a.id))} className="rounded bg-slate-900 px-2 py-1 text-sm text-white">Run now</button>
-          </div>
-        </div>
-      ))}
+    <div className="space-y-6">
+      <div className="flex items-center justify-between">
+        <PageTitle>Agents</PageTitle>
+        <ButtonLink href="/create" variant="primary">
+          <span className="text-base leading-none">+</span> New agent
+        </ButtonLink>
+      </div>
+
+      {error && <ErrorNote message={error} />}
+
+      {!agents ? (
+        <SkeletonRows />
+      ) : agents.length === 0 ? (
+        <Panel className="px-6 py-14 text-center">
+          <p className="text-ink">No digital workers yet.</p>
+          <p className="mx-auto mt-1 max-w-sm text-sm text-muted">
+            Describe what to watch or analyze in plain language, and Aunix compiles it into an
+            autonomous agent that runs on a schedule.
+          </p>
+          <ButtonLink href="/create" variant="primary" className="mt-5">
+            Create your first agent
+          </ButtonLink>
+        </Panel>
+      ) : (
+        <Panel className="divide-y divide-line overflow-hidden">
+          {agents.map((a, i) => (
+            <div
+              key={a.id}
+              className="rise flex items-center gap-4 px-5 py-4 transition-colors hover:bg-raise/60"
+              style={{ animationDelay: `${i * 45}ms` }}
+            >
+              <div className="min-w-0 flex-1">
+                <div className="flex items-center gap-2.5">
+                  <Link
+                    href={`/agents/${a.id}`}
+                    className="font-medium text-ink transition-colors hover:text-accent"
+                  >
+                    {a.spec.name}
+                  </Link>
+                  <StatusBadge value={a.status} />
+                </div>
+                <p className="mt-0.5 truncate text-sm text-muted">{a.spec.objective}</p>
+                <p className="mt-1.5 font-mono text-xs tracking-[-0.005em] text-faint">
+                  {a.spec.task_type} · {a.spec.data_sources.join(" + ")} ·{" "}
+                  {scheduleLabel(a.spec.schedule)}
+                </p>
+              </div>
+              <div className="flex shrink-0 items-center gap-2">
+                {a.status === "active" ? (
+                  <Button
+                    onClick={() => act(a.id, () => api.pause(a.id))}
+                    disabled={pending === a.id}
+                  >
+                    Pause
+                  </Button>
+                ) : (
+                  <Button
+                    onClick={() => act(a.id, () => api.activate(a.id))}
+                    disabled={pending === a.id}
+                  >
+                    Activate
+                  </Button>
+                )}
+                <Button
+                  variant="primary"
+                  onClick={() => act(a.id, () => api.runNow(a.id))}
+                  disabled={pending === a.id}
+                >
+                  Run now
+                </Button>
+              </div>
+            </div>
+          ))}
+        </Panel>
+      )}
     </div>
   );
 }
