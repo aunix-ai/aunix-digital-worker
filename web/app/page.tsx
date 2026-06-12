@@ -64,7 +64,7 @@ export default function AgentsPage() {
           {agents.map((a, i) => (
             <div
               key={a.id}
-              className="rise flex items-center gap-4 px-5 py-4 transition-colors hover:bg-raise/60"
+              className="rise flex flex-col gap-3 px-5 py-4 transition-colors hover:bg-raise/60 sm:flex-row sm:items-center sm:gap-4"
               style={{ animationDelay: `${i * 45}ms` }}
             >
               <div className="min-w-0 flex-1">

@@ -46,8 +46,8 @@ export default function AgentPage({ params }: { params: Promise<{ id: string }> 
         >
           ← Agents
         </Link>
-        <div className="mt-2 flex items-center justify-between gap-4">
-          <h1 className="flex items-center gap-3 text-2xl font-semibold tracking-[-0.01em] text-ink">
+        <div className="mt-2 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between sm:gap-4">
+          <h1 className="flex flex-wrap items-center gap-x-3 gap-y-2 text-2xl font-semibold tracking-[-0.01em] text-ink">
             {agent.spec.name}
             <StatusBadge value={agent.status} />
           </h1>
@@ -85,9 +85,9 @@ export default function AgentPage({ params }: { params: Promise<{ id: string }> 
               <Link
                 key={r.id}
                 href={`/runs/${r.id}`}
-                className="flex items-center gap-4 px-5 py-3.5 text-sm transition-colors hover:bg-raise/60"
+                className="flex flex-wrap items-center gap-x-4 gap-y-1.5 px-5 py-3.5 text-sm transition-colors hover:bg-raise/60"
               >
-                <span className="font-mono text-ink">run #{r.id}</span>
+                <span className="whitespace-nowrap font-mono text-ink">run #{r.id}</span>
                 <span className="text-faint">{r.trigger}</span>
                 {r.started_at && (
                   <span className="hidden text-faint sm:inline">
