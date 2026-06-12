@@ -77,3 +77,38 @@ def test_paused_agent_does_not_run(session, tmp_path):
     session.commit()
     runtime = FixedRuntime(tmp_path / "s.json", now=lambda: NOW)
     assert run_agent_once(make_session_factory(session), agent.id, runtime, trigger="interval", now=NOW) is None
+
+
+def test_slot_key_is_committed_atomically_with_the_run(session, tmp_path):
+    agent = seed_active_agent(session)
+    factory = make_session_factory(session)
+    runtime = FixedRuntime(tmp_path / "s.json", now=lambda: NOW)
+
+    run = run_agent_once(factory, agent.id, runtime, trigger="interval", now=NOW)
+    session.expire_all()  # re-read committed state from the DB
+    persisted = session.get(Run, run.id)
+    assert persisted.slot_key == slot_key_for(agent.id, make_spec(), NOW)
+
+
+def test_failed_run_still_claims_its_slot(session, tmp_path):
+    class BoomRuntime(FixedRuntime):
+        def connectors(self, inner_session):
+            class Boom:
+                source_id = "simship"
+
+                def fetch(self):
+                    raise RuntimeError("api down")
+
+            return {"simship": Boom()}
+
+    agent = seed_active_agent(session)
+    factory = make_session_factory(session)
+    runtime = BoomRuntime(tmp_path / "s.json")
+
+    r1 = run_agent_once(factory, agent.id, runtime, trigger="interval", now=NOW)
+    assert r1.status == "failed"
+    session.expire_all()
+    assert session.get(Run, r1.id).slot_key is not None  # failed run claims the slot
+
+    r2 = run_agent_once(factory, agent.id, runtime, trigger="interval", now=NOW)
+    assert r2 is None  # no hot-loop retry within the same slot

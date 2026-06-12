@@ -41,10 +41,8 @@ def run_agent_once(session_factory, agent_id: int, runtime, *,
         run = execute_run(
             session, agent, runtime.connectors(session), runtime.reasoner,
             runtime.notifiers(session), trigger=trigger, now=now,
+            slot_key=key,
         )
-        if key:
-            run.slot_key = key
-            session.commit()
         return run
 
 

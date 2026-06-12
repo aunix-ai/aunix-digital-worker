@@ -23,13 +23,14 @@ def execute_run(
     *,
     trigger: str = "manual",
     now: datetime,
+    slot_key: str | None = None,
 ) -> Run:
     """Execute one agent run and return the persisted Run record.
 
     Commits the session on success or failure; the caller owns the session
     lifecycle but must not commit or rollback after this returns.
     """
-    run = Run(agent_id=agent.id, trigger=trigger, started_at=now)
+    run = Run(agent_id=agent.id, trigger=trigger, started_at=now, slot_key=slot_key)
     session.add(run)
     session.flush()
     run_id = run.id
@@ -93,6 +94,7 @@ def execute_run(
         run.error = str(exc)
         run.trace = trace
         run.finished_at = now
+        run.slot_key = slot_key  # failed run still claims its slot to prevent hot-loop re-runs
         session.commit()
     return run
 
