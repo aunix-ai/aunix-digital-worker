@@ -14,7 +14,7 @@ from aunix.connectors.simship import SimShip
 from aunix.llm import OpenAiLlm
 from aunix.models import Connection
 from aunix.notifier import FeedNotifier, Notifier
-from aunix.notifier_email import EmailNotifier
+from aunix.notifier_email import EmailNotifier, MailgunNotifier
 from aunix.reasoning import Reasoner
 from aunix.reasoning_llm import LlmReasoner
 
@@ -38,6 +38,13 @@ class Runtime:
 
     def notifiers(self, session: Session) -> list[Notifier]:
         out: list[Notifier] = [FeedNotifier(session)]
-        if self.settings.resend_api_key:
-            out.append(EmailNotifier(session, self.settings.resend_api_key, self.settings.email_from))
+        s = self.settings
+        if s.mailgun_api_key and s.mailgun_domain:
+            # Mailgun requires the sender to be on the verified domain; fall back
+            # to alerts@<domain> when no real AUNIX_EMAIL_FROM is configured.
+            sender = s.email_from if s.email_from != "alerts@aunix.local" else f"Aunix Alerts <alerts@{s.mailgun_domain}>"
+            out.append(MailgunNotifier(session, s.mailgun_api_key, s.mailgun_domain,
+                                       sender, base_url=s.mailgun_base_url))
+        elif s.resend_api_key:
+            out.append(EmailNotifier(session, s.resend_api_key, s.email_from))
         return out
