@@ -2,7 +2,7 @@
 structured AgentSpec, or return clarifying questions when the intent is
 under-specified. The interpreted spec is shown to the user for confirmation
 before activation - no agent runs on an unconfirmed interpretation."""
-from pydantic import BaseModel, ValidationError
+from pydantic import BaseModel, ValidationError, model_validator
 
 from aunix.llm import LlmClient
 from aunix.spec import AgentSpec
@@ -38,6 +38,13 @@ class CompiledIntent(BaseModel):
     spec: AgentSpec | None = None
     clarifying_questions: list[str] = []
 
+    @model_validator(mode="after")
+    def questions_win(self):
+        # never auto-confirm a spec the model itself flagged as under-specified
+        if self.spec is not None and self.clarifying_questions:
+            self.spec = None
+        return self
+
 
 class CompileResult(BaseModel):
     spec: AgentSpec | None
@@ -52,5 +59,12 @@ def compile_intent(llm: LlmClient, text: str) -> CompileResult:
             f"{text}\n\nYour previous attempt failed validation:\n{exc}\n"
             "Return a corrected result."
         )
-        out = llm.parse(system=SYSTEM, prompt=retry_prompt, schema=CompiledIntent)
+        try:
+            out = llm.parse(system=SYSTEM, prompt=retry_prompt, schema=CompiledIntent)
+        except ValidationError:
+            return CompileResult(
+                spec=None,
+                questions=["I couldn't interpret that reliably - could you rephrase "
+                           "with the data source, what to watch for, and a schedule?"],
+            )
     return CompileResult(spec=out.spec, questions=out.clarifying_questions)
