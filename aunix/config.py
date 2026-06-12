@@ -16,7 +16,13 @@ class Settings(BaseSettings):
     )
     resend_api_key: str | None = None
     email_from: str = "alerts@aunix.local"
-    hubspot_access_token: str | None = None
+    # HubSpot private-app access token (Bearer). Accepts the bare HUBSPOT_* vars too.
+    hubspot_access_token: str | None = Field(
+        default=None,
+        validation_alias=AliasChoices(
+            "AUNIX_HUBSPOT_ACCESS_TOKEN", "HUBSPOT_ACCESS_TOKEN", "HUBSPOT_ID"
+        ),
+    )
     simship_state_path: str = "data/simship.json"
     upload_dir: str = "data/uploads"
     api_cors_origins: list[str] = ["http://localhost:3000"]
