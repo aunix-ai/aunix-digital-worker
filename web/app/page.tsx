@@ -1,5 +1,6 @@
 "use client";
 import { useCallback, useEffect, useState } from "react";
+import Link from "next/link";
 import { api } from "@/lib/api";
 import type { AgentOut } from "@/lib/types";
 import { StatusBadge } from "@/components/StatusBadge";
@@ -27,7 +28,7 @@ export default function AgentsPage() {
   if (agents.length === 0)
     return (
       <p className="text-slate-600">
-        No agents yet. <a href="/create" className="text-blue-600 underline">Create your first digital worker.</a>
+        No agents yet. <Link href="/create" className="text-blue-600 underline">Create your first digital worker.</Link>
       </p>
     );
 
@@ -37,7 +38,7 @@ export default function AgentsPage() {
       {agents.map((a) => (
         <div key={a.id} className="flex items-center justify-between rounded border bg-white p-4">
           <div>
-            <a href={`/agents/${a.id}`} className="font-medium hover:underline">{a.spec.name}</a>
+            <Link href={`/agents/${a.id}`} className="font-medium hover:underline">{a.spec.name}</Link>
             <p className="text-sm text-slate-600">{a.spec.objective}</p>
             <p className="text-xs text-slate-500">
               {a.spec.task_type} · {a.spec.data_sources.join(", ")} · {a.spec.schedule.mode}
