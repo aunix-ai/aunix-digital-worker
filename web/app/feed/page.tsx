@@ -10,9 +10,11 @@ export default function FeedPage() {
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    const load = () => api.feed().then(setItems).catch((e) => setError(String(e)));
-    load();
-    const t = setInterval(() => api.feed().then(setItems).catch(() => {}), 15000);
+    api.feed().then(setItems).catch((e) => setError(String(e)));
+    // poll while the console is in the foreground; pause when the tab is hidden
+    const t = setInterval(() => {
+      if (!document.hidden) api.feed().then(setItems).catch(() => {});
+    }, 15000);
     return () => clearInterval(t);
   }, []);
 
