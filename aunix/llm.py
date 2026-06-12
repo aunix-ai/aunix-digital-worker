@@ -24,14 +24,17 @@ class AnthropicLlm:
         self.client = client or anthropic.Anthropic()
 
     def parse(self, *, system: str, prompt: str, schema: type[T]) -> T:
-        response = self.client.messages.parse(
-            model=self.model,
-            max_tokens=16000,
-            thinking={"type": "adaptive"},
-            system=system,
-            messages=[{"role": "user", "content": prompt}],
-            output_format=schema,
-        )
+        try:
+            response = self.client.messages.parse(
+                model=self.model,
+                max_tokens=16000,
+                thinking={"type": "adaptive"},
+                system=system,
+                messages=[{"role": "user", "content": prompt}],
+                output_format=schema,
+            )
+        except anthropic.APIError as exc:
+            raise LlmError(str(exc)) from exc
         if response.parsed_output is None:
             raise LlmError(f"no structured output (stop_reason={response.stop_reason})")
         return response.parsed_output
