@@ -22,3 +22,26 @@ def make_spec(**overrides) -> AgentSpec:
     )
     base.update(overrides)
     return AgentSpec(**base)
+
+
+class FixedRuntime:
+    """Offline runtime for tests: SimShip only, rule-based reasoner, feed
+    notifier. Satisfies the same duck type as aunix.runtime.Runtime."""
+
+    def __init__(self, sim_path, now=None):
+        from aunix.reasoning import RuleBasedReasoner
+
+        self.sim_path = sim_path
+        self.now = now
+        self.reasoner = RuleBasedReasoner()
+
+    def connectors(self, session):
+        from aunix.connectors.simship import SimShip
+
+        kwargs = {"now": self.now} if self.now else {}
+        return {"simship": SimShip(self.sim_path, **kwargs)}
+
+    def notifiers(self, session):
+        from aunix.notifier import FeedNotifier
+
+        return [FeedNotifier(session)]

@@ -31,6 +31,8 @@ class Run(Base):
     finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     trace: Mapped[dict] = mapped_column(JSON, default=dict)  # explainability backbone
     error: Mapped[str | None] = mapped_column(Text, nullable=True)
+    # idempotency key for scheduled runs: one run per (agent, schedule slot)
+    slot_key: Mapped[str | None] = mapped_column(String(255), nullable=True, index=True)
 
 
 class Finding(Base):
