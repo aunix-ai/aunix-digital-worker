@@ -8,13 +8,14 @@ from pathlib import Path
 
 from fastapi import Depends, FastAPI, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 from sqlalchemy import select
 
 from aunix.compiler import CompileResult, compile_intent
 from aunix.config import Settings
 from aunix.db import make_engine, make_session_factory
-from aunix.llm import AnthropicLlm, LlmClient
+from aunix.llm import AnthropicLlm, LlmClient, LlmError
 from aunix.models import Agent, Base, Connection, Finding, Notification, Run
 from aunix.runtime import Runtime
 from aunix.spec import AgentSpec
@@ -50,6 +51,11 @@ def create_app(*, session_factory, llm: LlmClient, runtime: Runtime,
         CORSMiddleware, allow_origins=cors_origins or ["http://localhost:3000"],
         allow_methods=["*"], allow_headers=["*"],
     )
+
+    @app.exception_handler(LlmError)
+    def llm_error_handler(request, exc: LlmError):
+        return JSONResponse(status_code=502,
+                            content={"detail": f"language model unavailable: {exc}"})
 
     def get_session():
         with session_factory() as session:
@@ -98,11 +104,17 @@ def create_app(*, session_factory, llm: LlmClient, runtime: Runtime,
     @app.post("/agents/{agent_id}/run")
     def run_now(agent_id: int, session=Depends(get_session)):
         agent = get_agent(agent_id, session)
+        prior_status = agent.status
         if agent.status != "active":
-            agent.status = "active"  # run-now implies activation for draft agents
+            agent.status = "active"  # drafts activate; paused agents run once
             session.commit()
-        run = run_agent_once(session_factory, agent_id, runtime, trigger="manual",
-                             now=datetime.now(timezone.utc))
+        try:
+            run = run_agent_once(session_factory, agent_id, runtime, trigger="manual",
+                                 now=datetime.now(timezone.utc))
+        finally:
+            if prior_status == "paused":
+                agent.status = "paused"  # pause is sticky across manual runs
+                session.commit()
         if run is None:
             raise HTTPException(409, "agent did not run")
         # run was created inside run_agent_once's own session (now closed).
@@ -157,7 +169,11 @@ def create_app(*, session_factory, llm: LlmClient, runtime: Runtime,
     @app.post("/uploads/csv", status_code=201)
     def upload_csv(file: UploadFile, session=Depends(get_session)):
         content = file.file.read()
-        rows = list(csv_mod.DictReader(io.StringIO(content.decode("utf-8"))))
+        try:
+            text = content.decode("utf-8")
+        except UnicodeDecodeError:
+            raise HTTPException(400, "CSV must be UTF-8 encoded")
+        rows = list(csv_mod.DictReader(io.StringIO(text)))
         upload_dir.mkdir(parents=True, exist_ok=True)
         path = upload_dir / "sales_report.csv"  # single-slot MVP: latest upload wins
         path.write_bytes(content)
