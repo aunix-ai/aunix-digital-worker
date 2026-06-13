@@ -53,6 +53,11 @@ def execute_action(session: Session, action: Action, executors: dict[str, Action
         action.status = "expired"
         session.flush()
         raise ActionStateError(f"action {action.id} has expired")
+    if action.type not in executors:
+        action.status = "failed"
+        action.error = f"no executor configured for action type {action.type!r}"
+        session.flush()
+        return action
     finding = session.get(Finding, action.finding_id)
     spec = _spec_for(session, action)
     action.status = "approved"

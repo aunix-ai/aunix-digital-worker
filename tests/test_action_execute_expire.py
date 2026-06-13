@@ -61,6 +61,14 @@ def test_cannot_execute_expired(session):
         execute_action(session, act, {"resolve": OkExecutor()}, now=NOW, decided_by="x")
 
 
+def test_missing_executor_records_clear_failed(session):
+    act, f = seed(session)  # type="resolve"
+    execute_action(session, act, {}, now=NOW, decided_by="x")  # empty registry
+    assert act.status == "failed"
+    assert "no executor configured" in act.error
+    assert "resolve" in act.error
+
+
 def test_expire_sweep_marks_stale_pending_expired(session):
     stale, _ = seed(session, expires_at=NOW - timedelta(hours=1))
     fresh, _ = seed(session, expires_at=NOW + timedelta(hours=1))
