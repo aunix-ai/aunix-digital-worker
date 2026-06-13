@@ -47,6 +47,13 @@ class NotificationRule(BaseModel):
         return self
 
 
+class ActionPermission(BaseModel):
+    type: Literal["email", "hubspot", "task", "resolve"]
+    to_field: str | None = None  # email: row field holding the recipient
+    to: str | None = None        # email: fixed recipient when there is no field
+    ops: list[Literal["add_note", "set_property"]] = []  # hubspot
+
+
 class AgentSpec(BaseModel):
     name: str
     objective: str
@@ -56,7 +63,16 @@ class AgentSpec(BaseModel):
     conditions: ConditionGroup | None = None
     schedule: Schedule
     notifications: NotificationRule
-    autonomy_level: Literal[1, 2] = 1
+    autonomy_level: Literal[1, 2, 3, 4] = 1
+    actions: list[ActionPermission] = []
     reasoning_instructions: str | None = None  # free-text guidance for the LLM reasoner (Plan 2)
     rank_by: str | None = None  # analysis: numeric field for deterministic ranking
     top_n: int = Field(default=5, ge=1)  # analysis: briefing size
+
+    @model_validator(mode="after")
+    def check_action_permissions(self):
+        if self.autonomy_level >= 3 and not self.actions:
+            raise ValueError("autonomy level 3+ requires at least one action permission")
+        if self.autonomy_level <= 2 and self.actions:
+            raise ValueError("autonomy levels 1-2 cannot declare actions")
+        return self
