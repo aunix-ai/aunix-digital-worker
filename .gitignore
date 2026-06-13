@@ -12,3 +12,8 @@ web/.next/
 # runtime state (the seeded sample report under data/ stays tracked)
 data/simship.json
 data/uploads/
+
+# playwright e2e artifacts
+web/test-results/
+web/playwright-report/
+web/.playwright/
