@@ -16,7 +16,8 @@ from aunix.compiler import CompileResult, compile_intent
 from aunix.config import Settings
 from aunix.db import make_engine, make_session_factory
 from aunix.llm import LlmClient, LlmError, OpenAiLlm
-from aunix.models import Agent, Base, Connection, Finding, Notification, Run
+from aunix.actions.service import ActionStateError, execute_action
+from aunix.models import Action, Agent, Base, Connection, Finding, Notification, Run, Task
 from aunix.runtime import Runtime
 from aunix.spec import AgentSpec
 from aunix.worker import run_agent_once
@@ -31,8 +32,28 @@ class CreateAgentRequest(BaseModel):
     spec: AgentSpec
 
 
+class ApproveRequest(BaseModel):
+    params: dict | None = None
+
+
 def _agent_out(agent: Agent) -> dict:
     return {"id": agent.id, "owner": agent.owner, "status": agent.status, "spec": agent.spec}
+
+
+def _action_out(action: Action, finding: Finding | None = None) -> dict:
+    out = {
+        "id": action.id, "agent_id": action.agent_id, "run_id": action.run_id,
+        "finding_id": action.finding_id, "type": action.type, "params": action.params,
+        "status": action.status, "origin": action.origin, "result": action.result,
+        "error": action.error,
+        "created_at": action.created_at.isoformat() if action.created_at else None,
+        "expires_at": action.expires_at.isoformat() if action.expires_at else None,
+    }
+    if finding is not None:
+        out["finding"] = {"id": finding.id, "summary": finding.summary,
+                          "recommendation": finding.recommendation, "source_ref": finding.source_ref,
+                          "severity": finding.severity}
+    return out
 
 
 def _run_out(run: Run) -> dict:
@@ -147,6 +168,8 @@ def create_app(*, session_factory, llm: LlmClient, runtime: Runtime,
              "details": f.details}
             for f in findings
         ]
+        out["actions"] = [_action_out(a) for a in
+                          session.scalars(select(Action).where(Action.run_id == run_id)).all()]
         return out
 
     @app.get("/feed")
@@ -165,6 +188,45 @@ def create_app(*, session_factory, llm: LlmClient, runtime: Runtime,
                          "source_ref": f.source_ref}}
             for n, f in pairs
         ]
+
+    @app.get("/actions")
+    def list_actions(status: str | None = None, session=Depends(get_session)):
+        q = select(Action).order_by(Action.id.desc()).limit(200)
+        if status:
+            q = select(Action).where(Action.status == status).order_by(Action.id.desc()).limit(200)
+        out = []
+        for action in session.scalars(q).all():
+            out.append(_action_out(action, session.get(Finding, action.finding_id)))
+        return out
+
+    @app.post("/actions/{action_id}/approve")
+    def approve_action(action_id: int, body: ApproveRequest | None = None, session=Depends(get_session)):
+        action = session.get(Action, action_id)
+        if action is None:
+            raise HTTPException(404, "action not found")
+        if body and body.params is not None:
+            action.params = {**action.params, **body.params}  # edited params win
+            session.flush()
+        try:
+            execute_action(session, action, runtime.executors(session),
+                           now=datetime.now(timezone.utc), decided_by="user")
+        except ActionStateError as exc:
+            raise HTTPException(409, str(exc))
+        session.commit()
+        return _action_out(action)
+
+    @app.post("/actions/{action_id}/reject")
+    def reject_action(action_id: int, session=Depends(get_session)):
+        action = session.get(Action, action_id)
+        if action is None:
+            raise HTTPException(404, "action not found")
+        if action.status != "pending":
+            raise HTTPException(409, f"action is {action.status}")
+        action.status = "rejected"
+        action.decided_at = datetime.now(timezone.utc)
+        action.decided_by = "user"
+        session.commit()
+        return _action_out(action)
 
     @app.post("/uploads/csv", status_code=201)
     def upload_csv(file: UploadFile, session=Depends(get_session)):
