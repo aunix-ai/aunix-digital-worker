@@ -1,13 +1,25 @@
 import pytest
 from pydantic import ValidationError
 
-from aunix.spec import ActionPermission
+from aunix.spec import ActionPermission, ActionPolicy
 from aunix.testing import make_spec
 
 
 def test_autonomy_allows_levels_1_to_4():
     assert make_spec(autonomy_level=3, actions=[ActionPermission(type="email", to="x@y.com")]).autonomy_level == 3
-    assert make_spec(autonomy_level=4, actions=[ActionPermission(type="resolve")]).autonomy_level == 4
+    assert make_spec(autonomy_level=4, actions=[ActionPermission(type="resolve")],
+                     policy=ActionPolicy(resolve_auto=True)).autonomy_level == 4
+
+
+def test_l4_requires_policy():
+    with pytest.raises(ValidationError):
+        make_spec(autonomy_level=4, actions=[ActionPermission(type="resolve")])
+
+
+def test_policy_only_valid_at_l4():
+    with pytest.raises(ValidationError):
+        make_spec(autonomy_level=3, actions=[ActionPermission(type="resolve")],
+                  policy=ActionPolicy(resolve_auto=True))
 
 
 def test_autonomy_rejects_level_5():

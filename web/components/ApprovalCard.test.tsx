@@ -6,7 +6,7 @@ import type { ActionItem } from "@/lib/types";
 const ACTION: ActionItem = {
   id: 1, agent_id: 1, run_id: 3, finding_id: 7, type: "email",
   params: { to: "orders@acme.com", subject: "Re PO-4567", body: "Hi" },
-  status: "pending", origin: "L3", result: {}, error: null,
+  status: "pending", origin: "L3", policy_decision: null, decided_by: null, result: {}, error: null,
   created_at: "2026-06-12T12:00:00+00:00", expires_at: "2026-06-13T12:00:00+00:00",
   finding: { id: 7, summary: "PO-4567 delayed 2 days", recommendation: "Contact supplier",
              source_ref: "simship://PO-4567", severity: "warning" },

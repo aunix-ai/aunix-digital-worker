@@ -39,8 +39,17 @@ put any richer ranking guidance in reasoning_instructions.
 - schedule: interval (interval_minutes) for continuous monitoring, daily \
 (daily_time "HH:MM" 24h) for briefings, on_demand if the user will trigger runs.
 - notifications.channels from "feed" and "email"; email requires email_to.
-- autonomy_level is 1 (notify) or 2 (recommend); this platform never executes \
-actions.
+- autonomy_level: 1 (notify), 2 (recommend), 3 (execute with approval), or 4 \
+(autonomous within policy). Levels 1-2 must NOT set actions/policy. Levels 3-4 \
+require `actions` (a list of {type, ...}); type is "email" (set to_field or to), \
+"hubspot" (set ops like ["add_note"]), "task", or "resolve". Use 3 when the user \
+wants to approve each action ("draft it but let me approve"), 4 when they want it \
+done automatically ("automatically add a note").
+- autonomy_level 4 also requires `policy`: per-type auto flags + bounds \
+(email_auto/email_to_domains, hubspot_auto/hubspot_ops, task_auto, resolve_auto) \
+and caps (per_run, per_day). Anything the policy does not whitelist falls back to \
+human approval, so only set *_auto true for what the user explicitly wants \
+automated, and bound it (email_to_domains, hubspot_ops).
 - If a required detail is missing or ambiguous (e.g. no email address for an \
 email channel, no schedule time), return clarifying_questions instead of a \
 spec. Ask only for what you genuinely cannot infer.

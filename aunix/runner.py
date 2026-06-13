@@ -27,6 +27,7 @@ def execute_run(
     action_planner=None,
     actions_enabled: bool = False,
     action_ttl_hours: int = 24,
+    executors=None,
 ) -> Run:
     """Execute one agent run and return the persisted Run record.
 
@@ -83,12 +84,19 @@ def execute_run(
 
         if action_planner is not None and actions_enabled and spec.autonomy_level >= 3:
             from aunix.actions.service import propose_actions
-            proposed = 0
+            all_created = []
             for finding in to_notify:
-                created = propose_actions(session, spec, finding, run.id, action_planner,
-                                          now=now, ttl_hours=action_ttl_hours)
-                proposed += len(created)
-            trace["actions"] = {"proposed": proposed, "queued": proposed}  # L3 queues everything
+                all_created += propose_actions(
+                    session, spec, finding, run.id, action_planner,
+                    now=now, ttl_hours=action_ttl_hours, executors=executors,
+                )
+            # L3 queues everything; L4 auto-executes the policy-whitelisted subset inline.
+            trace["actions"] = {
+                "proposed": len(all_created),
+                "auto_executed": sum(1 for a in all_created if a.policy_decision == "auto" and a.status == "executed"),
+                "queued": sum(1 for a in all_created if a.status == "pending"),
+                "failed": sum(1 for a in all_created if a.status == "failed"),
+            }
 
         run.status = "succeeded"
         run.trace = trace

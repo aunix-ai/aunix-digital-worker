@@ -1,33 +1,58 @@
 """Action lifecycle service. propose_actions runs the planner, dedupes against the
-actions table, and queues pending rows (the L3 gate). execute_action / expire_actions
-(Task 9) handle approval and expiry. L4 policy auto-approval is layered on later."""
+actions table, then gates each proposal: L3 (or no policy) queues every action as
+`pending`; L4 auto-executes policy-whitelisted, in-bounds actions inline (within
+caps) and queues the rest. execute_action / expire_actions handle approval/expiry."""
 from datetime import datetime, timedelta, timezone
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from aunix.actions.executors import ActionExecutor
+from aunix.actions.gate import gate
 from aunix.actions.planner import ActionPlanner
 from aunix.models import Action, Finding
 from aunix.spec import AgentSpec
 
 
 def propose_actions(session: Session, spec: AgentSpec, finding: Finding, run_id: int,
-                    planner: ActionPlanner, *, now: datetime, ttl_hours: int) -> list[Action]:
+                    planner: ActionPlanner, *, now: datetime, ttl_hours: int,
+                    executors: dict[str, ActionExecutor] | None = None) -> list[Action]:
     existing = set(session.scalars(
         select(Action.dedupe_key).where(Action.agent_id == finding.agent_id)
     ).all())
+    is_l4 = spec.autonomy_level == 4 and spec.policy is not None
+    origin = "L4" if is_l4 else "L3"
+
+    run_auto = 0  # auto-approvals consumed in this run, for the per_run cap
+    day_auto = 0  # auto-approvals in the rolling 24h window, for the per_day cap
+    if is_l4:
+        day_auto = session.scalar(
+            select(func.count()).select_from(Action).where(
+                Action.agent_id == finding.agent_id,
+                Action.policy_decision == "auto",
+                Action.created_at >= now - timedelta(hours=24),
+            )
+        ) or 0
+
     created: list[Action] = []
     for proposed in planner.plan(spec, finding):
         if proposed.dedupe_key in existing:
             continue
         existing.add(proposed.dedupe_key)
+        decision = gate(spec, proposed, run_auto_count=run_auto, day_auto_count=day_auto) if is_l4 else "queued"
         action = Action(
             agent_id=finding.agent_id, run_id=run_id, finding_id=finding.id,
             type=proposed.type, params=proposed.params, dedupe_key=proposed.dedupe_key,
-            origin="L3", status="pending", expires_at=now + timedelta(hours=ttl_hours),
+            origin=origin, status="pending", policy_decision=(decision if is_l4 else None),
+            created_at=now, expires_at=now + timedelta(hours=ttl_hours),
         )
         session.add(action)
+        session.flush()
+        if decision == "auto":
+            run_auto += 1
+            day_auto += 1
+            if executors is not None:  # auto-execute inline; records executed/failed
+                execute_action(session, action, executors, now=now, decided_by="policy")
         created.append(action)
     session.flush()
     return created

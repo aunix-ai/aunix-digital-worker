@@ -54,6 +54,20 @@ class ActionPermission(BaseModel):
     ops: list[Literal["add_note", "set_property"]] = []  # hubspot
 
 
+class ActionPolicy(BaseModel):
+    """L4 declarative allowlist + caps. An action auto-executes only if its type's
+    `*_auto` flag is on, its target is within the type's bounds, and neither cap is
+    exceeded; otherwise it falls back to the L3 approval queue (never dropped)."""
+    email_auto: bool = False
+    email_to_domains: list[str] = []      # recipient must match one of these domains
+    hubspot_auto: bool = False
+    hubspot_ops: list[str] = []           # only these ops auto-execute
+    task_auto: bool = False
+    resolve_auto: bool = False
+    per_run: int = Field(default=3, ge=0)   # max auto-executions per run
+    per_day: int = Field(default=20, ge=0)  # max auto-executions per agent per rolling 24h
+
+
 class AgentSpec(BaseModel):
     name: str
     objective: str
@@ -65,6 +79,7 @@ class AgentSpec(BaseModel):
     notifications: NotificationRule
     autonomy_level: Literal[1, 2, 3, 4] = 1
     actions: list[ActionPermission] = []
+    policy: ActionPolicy | None = None  # L4 only: which actions auto-execute, within caps
     reasoning_instructions: str | None = None  # free-text guidance for the LLM reasoner (Plan 2)
     rank_by: str | None = None  # analysis: numeric field for deterministic ranking
     top_n: int = Field(default=5, ge=1)  # analysis: briefing size
@@ -75,4 +90,8 @@ class AgentSpec(BaseModel):
             raise ValueError("autonomy level 3+ requires at least one action permission")
         if self.autonomy_level <= 2 and self.actions:
             raise ValueError("autonomy levels 1-2 cannot declare actions")
+        if self.autonomy_level == 4 and self.policy is None:
+            raise ValueError("autonomy level 4 requires a policy")
+        if self.autonomy_level != 4 and self.policy is not None:
+            raise ValueError("policy is only valid at autonomy level 4")
         return self

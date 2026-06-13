@@ -29,6 +29,7 @@ export default function RunPage({ params }: { params: Promise<{ id: string }> })
 
   const breaches = run.trace.breaches ?? [];
   const fc = run.trace.findings;
+  const ac = run.trace.actions;
 
   return (
     <div className="space-y-6">
@@ -96,8 +97,53 @@ export default function RunPage({ params }: { params: Promise<{ id: string }> })
               "—"
             )}
           </TraceRow>
+          {ac && (
+            <TraceRow label="Actions">
+              <span className="font-mono text-sm">
+                <span className="text-ok">{ac.auto_executed} auto-executed</span>
+                <span className="text-faint"> · </span>
+                <span className="text-warn">{ac.queued} queued</span>
+                {ac.failed > 0 && (
+                  <>
+                    <span className="text-faint"> · </span>
+                    <span className="text-crit">{ac.failed} failed</span>
+                  </>
+                )}
+              </span>
+            </TraceRow>
+          )}
         </Panel>
       </section>
+
+      {(run.actions ?? []).length > 0 && (
+        <section className="space-y-3">
+          <SectionLabel>Actions</SectionLabel>
+          <div className="space-y-3">
+            {(run.actions ?? []).map((a) => (
+              <Panel key={a.id} className="p-5">
+                <div className="flex items-start justify-between gap-3">
+                  <div className="flex items-center gap-2">
+                    <span className="font-mono text-sm text-ink">{a.type}</span>
+                    <span className="rounded bg-raise px-1.5 py-0.5 font-mono text-xs text-faint">
+                      {a.origin}
+                    </span>
+                    {a.policy_decision === "auto" && (
+                      <span className="rounded bg-raise px-1.5 py-0.5 font-mono text-xs text-ok">
+                        policy&nbsp;auto
+                      </span>
+                    )}
+                  </div>
+                  <StatusBadge value={a.status} />
+                </div>
+                {a.decided_by && (
+                  <p className="mt-2 font-mono text-xs text-faint">decided by {a.decided_by}</p>
+                )}
+                {a.error && <p className="mt-2 text-sm text-crit">{a.error}</p>}
+              </Panel>
+            ))}
+          </div>
+        </section>
+      )}
 
       {(run.findings ?? []).length > 0 && (
         <section className="space-y-3">

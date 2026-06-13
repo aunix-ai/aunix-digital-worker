@@ -48,6 +48,7 @@ def run_agent_once(session_factory, agent_id: int, runtime, *,
             slot_key=key,
             action_planner=getattr(runtime, "action_planner", None),
             actions_enabled=actions_enabled, action_ttl_hours=ttl,
+            executors=runtime.executors(session),
         )
         return run
 

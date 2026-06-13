@@ -44,8 +44,9 @@ def _action_out(action: Action, finding: Finding | None = None) -> dict:
     out = {
         "id": action.id, "agent_id": action.agent_id, "run_id": action.run_id,
         "finding_id": action.finding_id, "type": action.type, "params": action.params,
-        "status": action.status, "origin": action.origin, "result": action.result,
-        "error": action.error,
+        "status": action.status, "origin": action.origin,
+        "policy_decision": action.policy_decision, "decided_by": action.decided_by,
+        "result": action.result, "error": action.error,
         "created_at": action.created_at.isoformat() if action.created_at else None,
         "expires_at": action.expires_at.isoformat() if action.expires_at else None,
     }

@@ -21,9 +21,14 @@ export interface Finding {
 }
 export interface RunOut {
   id: number; agent_id: number; trigger: string; status: string;
-  trace: { rows_fetched?: number; breaches?: string[]; findings?: { new: number; ongoing: number; resolved: number } };
+  trace: {
+    rows_fetched?: number; breaches?: string[];
+    findings?: { new: number; ongoing: number; resolved: number };
+    actions?: { proposed: number; auto_executed: number; queued: number; failed: number };
+  };
   error: string | null; started_at: string | null; finished_at: string | null;
   findings?: Finding[];
+  actions?: ActionItem[];
 }
 export interface FeedItem {
   id: number; channel: string; status: string; created_at: string | null; finding: Finding;
@@ -39,7 +44,8 @@ export interface ActionItem {
   type: "email" | "hubspot" | "task" | "resolve";
   params: Record<string, unknown>;
   status: "pending" | "approved" | "executed" | "rejected" | "expired" | "failed";
-  origin: string; result: Record<string, unknown>; error: string | null;
+  origin: string; policy_decision: "auto" | "queued" | null; decided_by: string | null;
+  result: Record<string, unknown>; error: string | null;
   created_at: string | null; expires_at: string | null;
   finding?: { id: number; summary: string; recommendation: string; source_ref: string; severity: string };
 }

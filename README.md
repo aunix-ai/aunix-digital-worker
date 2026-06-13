@@ -62,15 +62,37 @@ with plan confirmation), `/feed` (activity feed with "why?" links), `/runs/{id}`
 (decision trace + data evaluated), `/agents/{id}` (plan, run history),
 `/approvals` (pending action proposals, approve / reject).
 
-## Execution agents (L3)
+## Autonomy levels
 
-Agents at `autonomy_level: 3` propose actions (email / HubSpot note / task / resolve) on new
-findings instead of only notifying. Proposals queue in the **Approvals** inbox; approving runs
-the action and audits the result; stale proposals auto-expire.
+Every agent declares an `autonomy_level`. The ladder runs from *informs you* to *acts for
+you*; each level is a strict superset of the one below it.
+
+| Level | Name | What the agent does | Actions | Status |
+|---|---|---|---|---|
+| **L1** | Notify | Polls sources on schedule, evaluates conditions deterministically, narrates findings with the LLM, and alerts **once per issue** via feed + email. | — (forbidden) | ✅ implemented |
+| **L2** | Recommend | Same monitoring + alert-once pipeline as L1, with the narration framed as a recommended next step. | — (forbidden) | ✅ implemented |
+| **L3** | Execute with approval | On each **new** finding, proposes actions (`email` / `hubspot` note·property / `task` / `resolve`). Proposals queue in the **Approvals** inbox; a human approves (optionally editing) or rejects; approving executes and audits the result; stale proposals auto-expire. | required (`actions`) | ✅ implemented |
+| **L4** | Autonomous within policy | Same proposal step, but a declarative `policy` auto-executes the whitelisted, in-bounds subset within per-run / per-day caps. Anything outside the policy falls back to the L3 approval queue — never dropped. | required (`actions` + `policy`) | ✅ implemented |
+
+Safety invariant — **L4 ⊆ L3**: L4 only auto-approves what its policy explicitly permits
+(type whitelist + target bounds + caps); everything else queues for a human. Nothing executes
+unless the global kill switch is on, and L1/L2 agents never reach the act phase.
+
+### Configuration & API
 
 - Global kill switch: `AUNIX_ACTIONS_ENABLED` (default `false` — set `true` to enable execution).
-- Approval TTL: `AUNIX_ACTION_TTL_HOURS` (default 24).
+- Approval / proposal TTL: `AUNIX_ACTION_TTL_HOURS` (default 24); also bounds the L4 per-day cap window.
 - HubSpot writes need the `crm.objects.deals.write` scope on the private app.
 
+An L4 `policy` declares per-type auto flags + bounds and caps:
+
+    "autonomy_level": 4,
+    "actions": [{ "type": "hubspot", "ops": ["add_note"] }],
+    "policy": {
+      "hubspot_auto": true, "hubspot_ops": ["add_note"],
+      "per_run": 3, "per_day": 20
+    }
+
 API: `GET /actions?status=pending`, `POST /actions/{id}/approve` (optional edited `params`),
-`POST /actions/{id}/reject`. Actions also appear on `GET /runs/{id}`.
+`POST /actions/{id}/reject`. Auto-executed and queued actions also appear on `GET /runs/{id}`
+(with `origin` L3/L4 and `policy_decision` auto/queued).
