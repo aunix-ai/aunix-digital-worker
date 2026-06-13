@@ -37,7 +37,12 @@ export default function ApprovalsPage() {
         <div className="space-y-3">
           {items.map((a) => (
             <ApprovalCard key={a.id} action={a} busy={busy === a.id}
-                          onApprove={(params) => act(a.id, () => api.approveAction(a.id, params))}
+                          onApprove={(params) => act(a.id, async () => {
+                            const result = await api.approveAction(a.id, params);
+                            if (result.status === "failed") {
+                              setError(`Action failed: ${result.error ?? "unknown error"}`);
+                            }
+                          })}
                           onReject={() => act(a.id, () => api.rejectAction(a.id))} />
           ))}
         </div>
