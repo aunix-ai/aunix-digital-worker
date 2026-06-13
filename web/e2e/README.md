@@ -30,3 +30,8 @@ E2E_BASE_URL="http://localhost:3001" E2E_API_URL="http://localhost:8000" npm run
 L3 agent (which proposes a `resolve` action), then drives the Approvals inbox in
 the browser to approve it — asserting via both the UI and the API that the
 action executed and left the queue.
+
+`l4-autonomy.e2e.ts` runs an L4 agent whose policy whitelists the `resolve`
+action. It asserts the action **auto-executed under policy without ever entering
+the approval inbox** — verified on the run page (origin L4, a "policy auto"
+badge, decided by policy) and via the API.
