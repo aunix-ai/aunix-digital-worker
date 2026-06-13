@@ -29,11 +29,14 @@ class FixedRuntime:
     notifier. Satisfies the same duck type as aunix.runtime.Runtime."""
 
     def __init__(self, sim_path, now=None):
+        from aunix.actions.planner import RuleBasedActionPlanner
         from aunix.reasoning import RuleBasedReasoner
 
         self.sim_path = sim_path
         self.now = now
         self.reasoner = RuleBasedReasoner()
+        self.action_planner = RuleBasedActionPlanner()
+        self.actions_enabled = False  # tests flip this to True when exercising the act phase
 
     def connectors(self, session):
         from aunix.connectors.simship import SimShip
@@ -45,3 +48,8 @@ class FixedRuntime:
         from aunix.notifier import FeedNotifier
 
         return [FeedNotifier(session)]
+
+    def executors(self, session):
+        from aunix.actions.executors import ResolveActionExecutor, TaskActionExecutor
+
+        return {"task": TaskActionExecutor(), "resolve": ResolveActionExecutor()}

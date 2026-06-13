@@ -6,6 +6,13 @@ from pathlib import Path
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from aunix.actions.executors import (
+    EmailActionExecutor,
+    HubSpotActionExecutor,
+    ResolveActionExecutor,
+    TaskActionExecutor,
+)
+from aunix.actions.planner import LlmActionPlanner
 from aunix.config import Settings
 from aunix.connectors.base import Connector
 from aunix.connectors.csv_source import CsvConnector
@@ -23,6 +30,22 @@ class Runtime:
     def __init__(self, settings: Settings, reasoner: Reasoner | None = None):
         self.settings = settings
         self.reasoner = reasoner or LlmReasoner(OpenAiLlm(model=settings.llm_model))
+        self.action_planner = LlmActionPlanner(OpenAiLlm(model=settings.llm_model))
+
+    def executors(self, session: Session) -> dict:
+        from aunix.actions.executors import ActionExecutor
+        out: dict[str, ActionExecutor] = {
+            "task": TaskActionExecutor(),
+            "resolve": ResolveActionExecutor(),
+        }
+        s = self.settings
+        if s.mailgun_api_key and s.mailgun_domain:
+            sender = s.email_from if s.email_from != "alerts@aunix.local" else f"Aunix Alerts <alerts@{s.mailgun_domain}>"
+            out["email"] = EmailActionExecutor(s.mailgun_api_key, s.mailgun_domain, sender,
+                                               base_url=s.mailgun_base_url)
+        if s.hubspot_access_token:
+            out["hubspot"] = HubSpotActionExecutor(s.hubspot_access_token)
+        return out
 
     def connectors(self, session: Session) -> dict[str, Connector]:
         Path(self.settings.simship_state_path).parent.mkdir(parents=True, exist_ok=True)

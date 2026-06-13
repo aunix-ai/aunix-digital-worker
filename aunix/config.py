@@ -41,6 +41,8 @@ class Settings(BaseSettings):
             "AUNIX_HUBSPOT_ACCESS_TOKEN", "HUBSPOT_TOKEN", "HUBSPOT_ACCESS_TOKEN", "HUBSPOT_ID"
         ),
     )
+    actions_enabled: bool = False
+    action_ttl_hours: int = 24
     simship_state_path: str = "data/simship.json"
     upload_dir: str = "data/uploads"
     api_cors_origins: list[str] = ["http://localhost:3000"]
