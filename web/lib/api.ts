@@ -1,4 +1,4 @@
-import type { AgentOut, AgentSpec, CompileResult, FeedItem, RunOut } from "./types";
+import type { ActionItem, AgentOut, AgentSpec, CompileResult, FeedItem, RunOut } from "./types";
 
 const BASE = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
 
@@ -26,4 +26,13 @@ export const api = {
   listRuns: (id: number) => request<RunOut[]>(`/agents/${id}/runs`),
   getRun: (id: number) => request<RunOut>(`/runs/${id}`),
   feed: () => request<FeedItem[]>("/feed"),
+  listActions: (status?: string) =>
+    request<ActionItem[]>(`/actions${status ? `?status=${status}` : ""}`),
+  approveAction: (id: number, params?: Record<string, unknown>) =>
+    request<ActionItem>(`/actions/${id}/approve`, {
+      method: "POST",
+      body: JSON.stringify(params ? { params } : {}),
+    }),
+  rejectAction: (id: number) =>
+    request<ActionItem>(`/actions/${id}/reject`, { method: "POST" }),
 };

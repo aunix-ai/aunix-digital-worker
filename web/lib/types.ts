@@ -34,3 +34,12 @@ export interface ClarifyingQuestion {
   kind: "text" | "email";
 }
 export interface CompileResult { spec: AgentSpec | null; questions: ClarifyingQuestion[] }
+export interface ActionItem {
+  id: number; agent_id: number; run_id: number; finding_id: number;
+  type: "email" | "hubspot" | "task" | "resolve";
+  params: Record<string, unknown>;
+  status: "pending" | "approved" | "executed" | "rejected" | "expired" | "failed";
+  origin: string; result: Record<string, unknown>; error: string | null;
+  created_at: string | null; expires_at: string | null;
+  finding?: { id: number; summary: string; recommendation: string; source_ref: string; severity: string };
+}

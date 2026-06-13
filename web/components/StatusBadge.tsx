@@ -11,6 +11,12 @@ const TONE: Record<string, Tone> = {
   new: "accent",
   ongoing: "warn",
   resolved: "muted",
+  pending: "warn",
+  approved: "accent",
+  executed: "ok",
+  rejected: "muted",
+  expired: "muted",
+  proposed: "accent",
 };
 
 const STYLE: Record<Tone, { chip: string; dot: string }> = {

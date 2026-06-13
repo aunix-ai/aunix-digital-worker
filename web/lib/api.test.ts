@@ -23,4 +23,15 @@ describe("api client", () => {
     );
     await expect(api.runNow(999)).rejects.toThrow(/404/);
   });
+
+  it("approves an action with edited params", async () => {
+    const fetchMock = vi.spyOn(globalThis, "fetch").mockResolvedValue(
+      new Response(JSON.stringify({ id: 1, status: "executed" }), { status: 200 }),
+    );
+    await api.approveAction(1, { title: "x" });
+    expect(fetchMock).toHaveBeenCalledWith(
+      "http://localhost:8000/actions/1/approve",
+      expect.objectContaining({ method: "POST", body: JSON.stringify({ params: { title: "x" } }) }),
+    );
+  });
 });
