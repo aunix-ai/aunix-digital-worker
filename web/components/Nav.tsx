@@ -1,11 +1,14 @@
 "use client";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
+import { useEffect, useState } from "react";
+import { api } from "@/lib/api";
 
 const LINKS = [
   { href: "/", label: "Agents" },
   { href: "/create", label: "New agent" },
   { href: "/feed", label: "Activity" },
+  { href: "/approvals", label: "Approvals" },
 ];
 
 function isActive(pathname: string, href: string): boolean {
@@ -15,6 +18,14 @@ function isActive(pathname: string, href: string): boolean {
 
 export function Nav() {
   const pathname = usePathname();
+  const [pending, setPending] = useState(0);
+  useEffect(() => {
+    const load = () => api.listActions("pending").then((x) => setPending(x.length)).catch(() => {});
+    load();
+    const t = setInterval(() => { if (!document.hidden) load(); }, 15000);
+    return () => clearInterval(t);
+  }, []);
+
   return (
     <header className="sticky top-0 z-30 border-b border-line bg-bg/85 backdrop-blur-md">
       <div className="mx-auto flex h-14 max-w-4xl items-center gap-7 px-5">
@@ -37,6 +48,11 @@ export function Nav() {
                 }`}
               >
                 {l.label}
+                {l.href === "/approvals" && pending > 0 && (
+                  <span className="ml-1.5 rounded-full bg-accent px-1.5 py-0.5 text-[0.625rem] font-semibold text-accent-ink">
+                    {pending}
+                  </span>
+                )}
                 {active && (
                   <span className="absolute inset-x-2.5 -bottom-[1.05rem] h-px bg-accent" />
                 )}
