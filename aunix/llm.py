@@ -25,7 +25,13 @@ class OpenAiLlm:
 
     def __init__(self, model: str = "gpt-5.1", client: "openai.OpenAI | None" = None):
         self.model = model
-        self.client = client or openai.OpenAI()
+        self._client = client  # constructed lazily so building this (and Runtime) needs no key
+
+    @property
+    def client(self) -> "openai.OpenAI":
+        if self._client is None:
+            self._client = openai.OpenAI()
+        return self._client
 
     def parse(self, *, system: str, prompt: str, schema: type[T]) -> T:
         try:

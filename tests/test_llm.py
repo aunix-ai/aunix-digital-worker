@@ -67,6 +67,14 @@ def test_openai_api_errors_are_wrapped():
         OpenAiLlm(client=BoomClient()).parse(system="s", prompt="p", schema=Out)
 
 
+def test_openai_llm_constructs_without_a_key(monkeypatch):
+    # building the client must NOT require OPENAI_API_KEY; only a real call would
+    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+    from aunix.llm import OpenAiLlm
+    llm = OpenAiLlm(model="gpt-5.1")  # must not raise
+    assert llm.model == "gpt-5.1"
+
+
 def test_anthropic_api_errors_are_wrapped(monkeypatch):
     import httpx
     import anthropic
