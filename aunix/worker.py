@@ -38,10 +38,16 @@ def run_agent_once(session_factory, agent_id: int, runtime, *,
         key = slot_key_for(agent_id, spec, now) if trigger != "manual" else None
         if key and session.scalars(select(Run).where(Run.slot_key == key)).first():
             return None  # slot already ran (idempotent across restarts)
+        rt_settings = getattr(runtime, "settings", None)
+        actions_enabled = (rt_settings.actions_enabled if rt_settings
+                           else getattr(runtime, "actions_enabled", False))
+        ttl = rt_settings.action_ttl_hours if rt_settings else 24
         run = execute_run(
             session, agent, runtime.connectors(session), runtime.reasoner,
             runtime.notifiers(session), trigger=trigger, now=now,
             slot_key=key,
+            action_planner=getattr(runtime, "action_planner", None),
+            actions_enabled=actions_enabled, action_ttl_hours=ttl,
         )
         return run
 
