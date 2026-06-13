@@ -24,6 +24,9 @@ def execute_run(
     trigger: str = "manual",
     now: datetime,
     slot_key: str | None = None,
+    action_planner=None,
+    actions_enabled: bool = False,
+    action_ttl_hours: int = 24,
 ) -> Run:
     """Execute one agent run and return the persisted Run record.
 
@@ -77,6 +80,15 @@ def execute_run(
         for finding in to_notify:
             for notifier in active:
                 notifier.send(finding, spec)
+
+        if action_planner is not None and actions_enabled and spec.autonomy_level >= 3:
+            from aunix.actions.service import propose_actions
+            proposed = 0
+            for finding in to_notify:
+                created = propose_actions(session, spec, finding, run.id, action_planner,
+                                          now=now, ttl_hours=action_ttl_hours)
+                proposed += len(created)
+            trace["actions"] = {"proposed": proposed, "queued": proposed}  # L3 queues everything
 
         run.status = "succeeded"
         run.trace = trace
