@@ -1,7 +1,7 @@
 """Action lifecycle service. propose_actions runs the planner, dedupes against the
 actions table, and queues pending rows (the L3 gate). execute_action / expire_actions
 (Task 9) handle approval and expiry. L4 policy auto-approval is layered on later."""
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -46,7 +46,10 @@ def execute_action(session: Session, action: Action, executors: dict[str, Action
                    *, now: datetime, decided_by: str) -> Action:
     if action.status != "pending":
         raise ActionStateError(f"action {action.id} is {action.status}, not pending")
-    if action.expires_at is not None and action.expires_at <= now:
+    expires_at = action.expires_at
+    if expires_at is not None and expires_at.tzinfo is None:
+        expires_at = expires_at.replace(tzinfo=timezone.utc)  # SQLite strips tz; treat as UTC
+    if expires_at is not None and expires_at <= now:
         action.status = "expired"
         session.flush()
         raise ActionStateError(f"action {action.id} has expired")

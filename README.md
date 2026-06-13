@@ -59,4 +59,18 @@ and make sure that origin is in `AUNIX_API_CORS_ORIGINS`.
 
 Pages: `/` (agents + lifecycle controls), `/create` (conversational creation
 with plan confirmation), `/feed` (activity feed with "why?" links), `/runs/{id}`
-(decision trace + data evaluated), `/agents/{id}` (plan, run history).
+(decision trace + data evaluated), `/agents/{id}` (plan, run history),
+`/approvals` (pending action proposals, approve / reject).
+
+## Execution agents (L3)
+
+Agents at `autonomy_level: 3` propose actions (email / HubSpot note / task / resolve) on new
+findings instead of only notifying. Proposals queue in the **Approvals** inbox; approving runs
+the action and audits the result; stale proposals auto-expire.
+
+- Global kill switch: `AUNIX_ACTIONS_ENABLED` (default `false` — set `true` to enable execution).
+- Approval TTL: `AUNIX_ACTION_TTL_HOURS` (default 24).
+- HubSpot writes need the `crm.objects.deals.write` scope on the private app.
+
+API: `GET /actions?status=pending`, `POST /actions/{id}/approve` (optional edited `params`),
+`POST /actions/{id}/reject`. Actions also appear on `GET /runs/{id}`.
