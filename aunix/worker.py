@@ -73,6 +73,15 @@ def schedule_agents(scheduler, session_factory, runtime: Runtime) -> None:
         )
 
 
+def sweep_expired_actions(session_factory, *, now: datetime | None = None) -> int:
+    from aunix.actions.service import expire_actions
+    now = now or datetime.now(timezone.utc)
+    with session_factory() as session:
+        n = expire_actions(session, now=now)
+        session.commit()
+        return n
+
+
 def main() -> None:
     logging.basicConfig(level=logging.INFO)
     settings = Settings()
@@ -84,6 +93,8 @@ def main() -> None:
     schedule_agents(scheduler, session_factory, runtime)
     scheduler.add_job(schedule_agents, IntervalTrigger(minutes=1),
                       args=[scheduler, session_factory, runtime], id="rescan")
+    scheduler.add_job(sweep_expired_actions, IntervalTrigger(minutes=5),
+                      args=[session_factory], id="expire-actions")
     logger.info("worker started")
     scheduler.start()
 
