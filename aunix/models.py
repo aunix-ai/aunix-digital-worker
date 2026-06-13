@@ -70,3 +70,37 @@ class Connection(Base):
     provider: Mapped[str] = mapped_column(String(50))  # hubspot|simship|csv
     credentials: Mapped[dict] = mapped_column(JSON, default=dict)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+
+class Action(Base):
+    __tablename__ = "actions"
+    __table_args__ = (Index("ix_actions_agent_dedupe", "agent_id", "dedupe_key"),)
+    id: Mapped[int] = mapped_column(primary_key=True)
+    agent_id: Mapped[int] = mapped_column(ForeignKey("agents.id"))
+    run_id: Mapped[int] = mapped_column(ForeignKey("runs.id"))
+    finding_id: Mapped[int] = mapped_column(ForeignKey("findings.id"))
+    type: Mapped[str] = mapped_column(String(20))  # email|hubspot|task|resolve
+    params: Mapped[dict] = mapped_column(JSON, default=dict)
+    status: Mapped[str] = mapped_column(String(20), default="pending")
+    # pending|approved|executed|rejected|expired|failed
+    origin: Mapped[str] = mapped_column(String(4))  # L3|L4
+    policy_decision: Mapped[str | None] = mapped_column(String(10), nullable=True)
+    dedupe_key: Mapped[str] = mapped_column(String(300))
+    result: Mapped[dict] = mapped_column(JSON, default=dict)
+    error: Mapped[str | None] = mapped_column(Text, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    decided_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    decided_by: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    executed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+
+class Task(Base):
+    __tablename__ = "tasks"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    agent_id: Mapped[int] = mapped_column(ForeignKey("agents.id"))
+    finding_id: Mapped[int] = mapped_column(ForeignKey("findings.id"))
+    title: Mapped[str] = mapped_column(Text)
+    due_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    done: Mapped[bool] = mapped_column(default=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
