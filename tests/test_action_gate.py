@@ -58,3 +58,22 @@ def test_per_day_cap_queues_overflow():
     p = ProposedAction(type="resolve", params={}, dedupe_key="k")
     assert gate(spec, p, run_auto_count=0, day_auto_count=4) == "auto"
     assert gate(spec, p, run_auto_count=0, day_auto_count=5) == "queued"
+
+
+def test_composio_slug_must_be_whitelisted():
+    spec = l4(
+        ActionPolicy(composio_auto=True, composio_tool_slugs=["HUBSPOT_CREATE_NOTE"]),
+        ActionPermission(type="composio", tool_slug="HUBSPOT_CREATE_NOTE"),
+    )
+    allowed = ProposedAction(
+        type="composio",
+        params={"tool_slug": "HUBSPOT_CREATE_NOTE", "arguments": {}},
+        dedupe_key="k1",
+    )
+    blocked = ProposedAction(
+        type="composio",
+        params={"tool_slug": "HUBSPOT_DELETE_DEAL", "arguments": {}},
+        dedupe_key="k2",
+    )
+    assert gate(spec, allowed, run_auto_count=0, day_auto_count=0) == "auto"
+    assert gate(spec, blocked, run_auto_count=0, day_auto_count=0) == "queued"

@@ -33,6 +33,28 @@ describe("PlanSummary", () => {
     expect(screen.getByText(/notify only/i)).toBeInTheDocument();
   });
 
+  it("renders composio sources with toolkit and tool slug", () => {
+    render(
+      <PlanSummary
+        spec={{
+          ...SPEC,
+          data_sources: [
+            {
+              type: "composio",
+              toolkit: "salesforce",
+              tool_slug: "SALESFORCE_QUERY_OPPORTUNITIES",
+              arguments: { limit: 50 },
+              record_key: "Id",
+            },
+          ],
+        }}
+      />,
+    );
+    expect(screen.getByText(/salesforce → SALESFORCE_QUERY_OPPORTUNITIES/i)).toBeInTheDocument();
+    expect(screen.getByText(/arguments: \{"limit":50\}/)).toBeInTheDocument();
+    expect(screen.queryByText(/\[object Object\]/i)).not.toBeInTheDocument();
+  });
+
   it("describes analysis agents by ranking instead of conditions", () => {
     render(
       <PlanSummary

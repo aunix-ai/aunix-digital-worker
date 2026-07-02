@@ -46,3 +46,15 @@ class Settings(BaseSettings):
     simship_state_path: str = "data/simship.json"
     upload_dir: str = "data/uploads"
     api_cors_origins: list[str] = ["http://localhost:3000"]
+    composio_api_key: str | None = Field(
+        default=None,
+        validation_alias=AliasChoices("AUNIX_COMPOSIO_API_KEY", "COMPOSIO_API_KEY"),
+    )
+    composio_user_id: str = Field(
+        default="flowops-demo-user",
+        validation_alias=AliasChoices("AUNIX_COMPOSIO_USER_ID", "COMPOSIO_USER_ID"),
+    )
+    public_app_url: str = Field(
+        default="http://localhost:3000",
+        validation_alias=AliasChoices("AUNIX_PUBLIC_APP_URL", "NEXT_PUBLIC_APP_URL"),
+    )

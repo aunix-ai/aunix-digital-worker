@@ -2,7 +2,7 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { api } from "@/lib/api";
-import type { AgentSpec, ClarifyingQuestion } from "@/lib/types";
+import type { AgentSpec, ClarifyingQuestion, CompileResult } from "@/lib/types";
 import { PlanSummary } from "@/components/PlanSummary";
 import { Button, ErrorNote, PageTitle, Panel } from "@/components/ui";
 
@@ -18,6 +18,7 @@ export default function CreatePage() {
   const [history, setHistory] = useState<string[]>([]);
   const [busy, setBusy] = useState(false);
   const [spec, setSpec] = useState<AgentSpec | null>(null);
+  const [composioContext, setComposioContext] = useState<CompileResult["composio_context"]>(null);
   const [questions, setQuestions] = useState<ClarifyingQuestion[]>([]);
   const [answers, setAnswers] = useState<Record<string, string>>({});
   const [error, setError] = useState<string | null>(null);
@@ -26,6 +27,7 @@ export default function CreatePage() {
     setBusy(true);
     setError(null);
     setSpec(null);
+    setComposioContext(null);
     setQuestions([]);
     const all = [...baseHistory, ...extraLines];
     const prompt = all.length ? `${text}\n\nAdditional details:\n${all.join("\n")}` : text;
@@ -33,6 +35,7 @@ export default function CreatePage() {
       const result = await api.compile(prompt);
       setHistory(all);
       setSpec(result.spec);
+      setComposioContext(result.composio_context ?? null);
       setQuestions(result.questions);
       setAnswers({});
     } catch (e) {
@@ -180,6 +183,19 @@ export default function CreatePage() {
             Here&rsquo;s how Aunix understood it.
           </div>
           <PlanSummary spec={spec} />
+          {composioContext?.tool_search?.results?.[0]?.primary_tool_slugs?.length ? (
+            <Panel className="px-5 py-4 text-sm">
+              <p className="font-medium text-ink">Composio tool search (compile-time)</p>
+              <p className="mt-1 text-xs text-muted">
+                Suggested tools for this intent — verify they match the selected source above.
+              </p>
+              <ul className="mt-2 space-y-1 font-mono text-[0.8125rem] text-ink">
+                {composioContext.tool_search.results[0].primary_tool_slugs?.map((slug) => (
+                  <li key={slug}>{slug}</li>
+                ))}
+              </ul>
+            </Panel>
+          ) : null}
           <div className="flex gap-2">
             <Button onClick={confirm} variant="primary" disabled={busy}>
               {busy ? "Activating…" : "Confirm & activate"}

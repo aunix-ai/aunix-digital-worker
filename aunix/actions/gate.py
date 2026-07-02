@@ -42,6 +42,13 @@ def gate(spec: AgentSpec, proposed: ProposedAction, *,
         if proposed.params.get("op", "add_note") not in policy.hubspot_ops:
             return "queued"
         return "auto"
+    if proposed.type == "composio":
+        if not policy.composio_auto:
+            return "queued"
+        slug = str(proposed.params.get("tool_slug") or "")
+        if policy.composio_tool_slugs and slug not in policy.composio_tool_slugs:
+            return "queued"
+        return "auto"
     if proposed.type == "task":
         return "auto" if policy.task_auto else "queued"
     if proposed.type == "resolve":

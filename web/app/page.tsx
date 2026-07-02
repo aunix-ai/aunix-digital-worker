@@ -35,6 +35,22 @@ export default function AgentsPage() {
     }
   }
 
+  async function remove(id: number, name: string) {
+    if (!window.confirm(`Delete "${name}"? This removes the agent, its runs, and alert history.`)) {
+      return;
+    }
+    setPending(id);
+    setError(null);
+    try {
+      await api.deleteAgent(id);
+      refresh();
+    } catch (e) {
+      setError(String(e));
+    } finally {
+      setPending(null);
+    }
+  }
+
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
@@ -105,6 +121,13 @@ export default function AgentsPage() {
                   disabled={pending === a.id}
                 >
                   Run now
+                </Button>
+                <Button
+                  variant="danger"
+                  onClick={() => remove(a.id, a.spec.name)}
+                  disabled={pending === a.id}
+                >
+                  Delete
                 </Button>
               </div>
             </div>

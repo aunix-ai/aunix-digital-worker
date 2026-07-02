@@ -1,9 +1,19 @@
+export interface ComposioSource {
+  type: "composio";
+  toolkit: string;
+  tool_slug: string;
+  arguments?: Record<string, unknown>;
+  record_key?: string;
+  row_mapping?: Record<string, string>;
+  key?: string | null;
+}
+export type DataSourceRef = string | ComposioSource;
 export interface Condition { field: string; operator: string; value: number | string }
 export interface AgentSpec {
   name: string;
   objective: string;
   task_type: "monitoring" | "analysis";
-  data_sources: string[];
+  data_sources: DataSourceRef[];
   record_key: string;
   conditions: { mode: "all" | "any"; conditions: Condition[] } | null;
   schedule: { mode: "interval" | "daily" | "on_demand"; interval_minutes?: number | null; daily_time?: string | null };
@@ -38,10 +48,19 @@ export interface ClarifyingQuestion {
   choices: string[];
   kind: "text" | "email";
 }
-export interface CompileResult { spec: AgentSpec | null; questions: ClarifyingQuestion[] }
+export interface CompileResult {
+  spec: AgentSpec | null;
+  questions: ClarifyingQuestion[];
+  composio_context?: {
+    connections?: Array<{ slug: string; name: string; is_connected: boolean; status: string }>;
+    tool_search?: { results?: Array<{ primary_tool_slugs?: string[]; use_case?: string }> };
+    tool_search_error?: string;
+    error?: string;
+  } | null;
+}
 export interface ActionItem {
   id: number; agent_id: number; run_id: number; finding_id: number;
-  type: "email" | "hubspot" | "task" | "resolve";
+  type: "email" | "hubspot" | "task" | "resolve" | "composio";
   params: Record<string, unknown>;
   status: "pending" | "approved" | "executed" | "rejected" | "expired" | "failed";
   origin: string; policy_decision: "auto" | "queued" | null; decided_by: string | null;

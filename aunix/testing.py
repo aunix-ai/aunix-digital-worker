@@ -38,7 +38,7 @@ class FixedRuntime:
         self.action_planner = RuleBasedActionPlanner()
         self.actions_enabled = False  # tests flip this to True when exercising the act phase
 
-    def connectors(self, session):
+    def connectors(self, session, spec=None, *, owner=None):
         from aunix.connectors.simship import SimShip
 
         kwargs = {"now": self.now} if self.now else {}
@@ -49,7 +49,7 @@ class FixedRuntime:
 
         return [FeedNotifier(session)]
 
-    def executors(self, session):
+    def executors(self, session, *, owner=None):
         from aunix.actions.executors import ResolveActionExecutor, TaskActionExecutor
 
         return {"task": TaskActionExecutor(), "resolve": ResolveActionExecutor()}

@@ -6,7 +6,8 @@ before activation - no agent runs on an unconfirmed interpretation.
 Clarifying questions are structured (text + optional choices + kind) so the UI
 can render real controls - selectable chips for enumerable answers, an email
 field for addresses - rather than asking the user to rewrite their prose."""
-from typing import Literal
+import json
+from typing import Any, Literal
 
 from pydantic import BaseModel, ValidationError, model_validator
 
@@ -27,8 +28,14 @@ Rules:
 - task_type is "monitoring" for watch/alert intents and "analysis" for \
 report/ranking/briefing intents.
 - data_sources is a subset of: "simship" (purchase orders and shipments), \
-"hubspot" (CRM deals/leads), "csv" (uploaded sales reports).
-- record_key is "po_number" for simship and "lead" for hubspot or csv.
+"hubspot" (legacy CRM token connector), "csv" (uploaded sales reports), or a \
+composio object: {"type":"composio","toolkit":"hubspot","tool_slug":"...","arguments":"{}",\
+"record_key":"hubspot_id","row_mapping":"{}"}. Prefer composio objects for external \
+systems when Composio context shows a connected toolkit and a matching tool slug. \
+For composio objects, arguments and row_mapping must be JSON object strings (use "{}" \
+when empty). For composio actions, argument_template is also a JSON object string.
+- record_key is "po_number" for simship and "lead" for hubspot/csv unless a \
+composio source defines its own record_key.
 - Monitoring specs need a conditions group. Available operators: gt, lt, gte, \
 lte, eq, ne (a string value naming another column compares the two columns, \
 ordering operators only), and stale_hours (numeric value, hours since a \
@@ -42,11 +49,13 @@ put any richer ranking guidance in reasoning_instructions.
 - autonomy_level: 1 (notify), 2 (recommend), 3 (execute with approval), or 4 \
 (autonomous within policy). Levels 1-2 must NOT set actions/policy. Levels 3-4 \
 require `actions` (a list of {type, ...}); type is "email" (set to_field or to), \
-"hubspot" (set ops like ["add_note"]), "task", or "resolve". Use 3 when the user \
+"hubspot" (set ops like ["add_note"]), "composio" (set tool_slug and \
+argument_template), "task", or "resolve". Use 3 when the user \
 wants to approve each action ("draft it but let me approve"), 4 when they want it \
 done automatically ("automatically add a note").
 - autonomy_level 4 also requires `policy`: per-type auto flags + bounds \
-(email_auto/email_to_domains, hubspot_auto/hubspot_ops, task_auto, resolve_auto) \
+(email_auto/email_to_domains, hubspot_auto/hubspot_ops, composio_auto/composio_tool_slugs, \
+task_auto, resolve_auto) \
 and caps (per_run, per_day). Anything the policy does not whitelist falls back to \
 human approval, so only set *_auto true for what the user explicitly wants \
 automated, and bound it (email_to_domains, hubspot_ops).
@@ -80,14 +89,26 @@ class CompiledIntent(BaseModel):
 class CompileResult(BaseModel):
     spec: AgentSpec | None
     questions: list[ClarifyingQuestion]
+    composio_context: dict[str, Any] | None = None
 
 
-def compile_intent(llm: LlmClient, text: str) -> CompileResult:
+def compile_intent(
+    llm: LlmClient,
+    text: str,
+    *,
+    composio_context: dict[str, Any] | None = None,
+) -> CompileResult:
+    prompt = text
+    if composio_context:
+        prompt = (
+            f"{text}\n\nComposio integration context (connected systems and tool search):\n"
+            f"{json.dumps(composio_context, indent=2, default=str)}"
+        )
     try:
-        out = llm.parse(system=SYSTEM, prompt=text, schema=CompiledIntent)
+        out = llm.parse(system=SYSTEM, prompt=prompt, schema=CompiledIntent)
     except ValidationError as exc:
         retry_prompt = (
-            f"{text}\n\nYour previous attempt failed validation:\n{exc}\n"
+            f"{prompt}\n\nYour previous attempt failed validation:\n{exc}\n"
             "Return a corrected result."
         )
         try:
@@ -99,5 +120,10 @@ def compile_intent(llm: LlmClient, text: str) -> CompileResult:
                     text="I couldn't interpret that reliably - could you rephrase "
                          "with the data source, what to watch for, and a schedule?"
                 )],
+                composio_context=composio_context,
             )
-    return CompileResult(spec=out.spec, questions=out.clarifying_questions)
+    return CompileResult(
+        spec=out.spec,
+        questions=out.clarifying_questions,
+        composio_context=composio_context,
+    )

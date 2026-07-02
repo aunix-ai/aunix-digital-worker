@@ -1,4 +1,6 @@
-from typing import Literal
+from aunix.schema_types import JsonObjectField, JsonStringMapField
+
+from typing import Any, Literal
 
 from pydantic import BaseModel, Field, model_validator
 
@@ -48,10 +50,12 @@ class NotificationRule(BaseModel):
 
 
 class ActionPermission(BaseModel):
-    type: Literal["email", "hubspot", "task", "resolve"]
+    type: Literal["email", "hubspot", "task", "resolve", "composio"]
     to_field: str | None = None  # email: row field holding the recipient
     to: str | None = None        # email: fixed recipient when there is no field
     ops: list[Literal["add_note", "set_property"]] = []  # hubspot
+    tool_slug: str | None = None  # composio
+    argument_template: JsonObjectField = Field(default_factory=dict)  # composio
 
 
 class ActionPolicy(BaseModel):
@@ -62,17 +66,60 @@ class ActionPolicy(BaseModel):
     email_to_domains: list[str] = []      # recipient must match one of these domains
     hubspot_auto: bool = False
     hubspot_ops: list[str] = []           # only these ops auto-execute
+    composio_auto: bool = False
+    composio_tool_slugs: list[str] = []   # only these Composio slugs auto-execute
     task_auto: bool = False
     resolve_auto: bool = False
     per_run: int = Field(default=3, ge=0)   # max auto-executions per run
     per_day: int = Field(default=20, ge=0)  # max auto-executions per agent per rolling 24h
 
 
+class ComposioSource(BaseModel):
+    type: Literal["composio"] = "composio"
+    toolkit: str
+    tool_slug: str
+    arguments: JsonObjectField = Field(default_factory=dict)
+    record_key: str = "id"
+    row_mapping: JsonStringMapField = Field(default_factory=dict)
+    key: str | None = None
+
+    def source_id(self) -> str:
+        return self.key or f"composio:{self.tool_slug.lower()}"
+
+
+DataSourceRef = str | ComposioSource
+
+
+def resolve_data_source_id(ref: DataSourceRef) -> str:
+    if isinstance(ref, str):
+        return ref
+    return ref.source_id()
+
+
+def iter_composio_sources(spec: "AgentSpec") -> list[ComposioSource]:
+    out: list[ComposioSource] = []
+    for ref in spec.data_sources:
+        if isinstance(ref, ComposioSource):
+            out.append(ref)
+    return out
+
+
+def resolve_record_key(spec: "AgentSpec", row: dict) -> str:
+    """Best-effort record id from a fetched row."""
+    value = row.get(spec.record_key)
+    if value not in (None, ""):
+        return str(value)
+    for fallback in ("Id", "id", "hubspot_id", "po_number", "lead"):
+        if row.get(fallback) not in (None, ""):
+            return str(row[fallback])
+    return "unknown"
+
+
 class AgentSpec(BaseModel):
     name: str
     objective: str
     task_type: Literal["monitoring", "analysis"]
-    data_sources: list[str]
+    data_sources: list[DataSourceRef]
     record_key: str = "id"  # field identifying a record in fetched rows
     conditions: ConditionGroup | None = None
     schedule: Schedule

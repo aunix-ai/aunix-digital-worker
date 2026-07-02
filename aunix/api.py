@@ -5,14 +5,25 @@ import csv as csv_mod
 import io
 from datetime import datetime, timezone
 from pathlib import Path
+from typing import Any
 
+from dotenv import load_dotenv
 from fastapi import Depends, FastAPI, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, Response
 from pydantic import BaseModel
-from sqlalchemy import select
+from sqlalchemy import delete, select
 
 from aunix.compiler import CompileResult, compile_intent
+from aunix.composio.compile_context import build_compile_context
+from aunix.composio.normalize import normalize_rows
+from aunix.composio.operations import (
+    execute_tool,
+    get_connect_link,
+    get_tool_schema,
+    list_toolkit_connections,
+    search_tools,
+)
 from aunix.config import Settings
 from aunix.db import make_engine, make_session_factory
 from aunix.llm import LlmClient, LlmError, OpenAiLlm
@@ -34,6 +45,21 @@ class CreateAgentRequest(BaseModel):
 
 class ApproveRequest(BaseModel):
     params: dict | None = None
+
+
+class ConnectRequest(BaseModel):
+    toolkit: str
+
+
+class SearchToolsRequest(BaseModel):
+    query: str
+    toolkits: list[str] | None = None
+
+
+class ProbeRequest(BaseModel):
+    tool_slug: str
+    arguments: dict[str, Any] = {}
+    row_mapping: dict[str, str] = {}
 
 
 def _agent_out(agent: Agent) -> dict:
@@ -67,8 +93,10 @@ def _run_out(run: Run) -> dict:
 
 
 def create_app(*, session_factory, llm: LlmClient, runtime: Runtime,
-               upload_dir: Path, cors_origins: list[str] | None = None) -> FastAPI:
+               upload_dir: Path, cors_origins: list[str] | None = None,
+               settings: Settings | None = None) -> FastAPI:
     app = FastAPI(title="Aunix Digital Worker")
+    app_settings = settings or Settings()
     app.add_middleware(
         CORSMiddleware, allow_origins=cors_origins or ["http://localhost:3000"],
         allow_methods=["*"], allow_headers=["*"],
@@ -91,7 +119,61 @@ def create_app(*, session_factory, llm: LlmClient, runtime: Runtime,
 
     @app.post("/agents/compile", response_model=CompileResult)
     def compile_endpoint(body: CompileRequest):
-        return compile_intent(llm, body.text)
+        composio_context = None
+        if app_settings.composio_api_key:
+            try:
+                composio_context = build_compile_context(body.text)
+            except Exception as exc:
+                composio_context = {"error": str(exc)}
+        return compile_intent(llm, body.text, composio_context=composio_context)
+
+    @app.get("/integrations/status")
+    def integrations_status():
+        if not app_settings.composio_api_key:
+            raise HTTPException(503, "Composio is not configured")
+        try:
+            return {"connections": list_toolkit_connections()}
+        except Exception as exc:
+            raise HTTPException(502, f"Composio error: {exc}") from exc
+
+    @app.post("/integrations/connect")
+    def integrations_connect(body: ConnectRequest):
+        if not app_settings.composio_api_key:
+            raise HTTPException(503, "Composio is not configured")
+        callback_url = f"{app_settings.public_app_url.rstrip('/')}/integrations/callback"
+        try:
+            return get_connect_link(body.toolkit, callback_url)
+        except Exception as exc:
+            raise HTTPException(502, f"Composio error: {exc}") from exc
+
+    @app.post("/integrations/search")
+    def integrations_search(body: SearchToolsRequest):
+        if not app_settings.composio_api_key:
+            raise HTTPException(503, "Composio is not configured")
+        try:
+            return search_tools(body.query, toolkits=body.toolkits)
+        except Exception as exc:
+            raise HTTPException(502, f"Composio error: {exc}") from exc
+
+    @app.get("/integrations/tools/{tool_slug}")
+    def integrations_tool_schema(tool_slug: str):
+        if not app_settings.composio_api_key:
+            raise HTTPException(503, "Composio is not configured")
+        try:
+            return get_tool_schema(tool_slug)
+        except Exception as exc:
+            raise HTTPException(502, f"Composio error: {exc}") from exc
+
+    @app.post("/integrations/probe")
+    def integrations_probe(body: ProbeRequest):
+        if not app_settings.composio_api_key:
+            raise HTTPException(503, "Composio is not configured")
+        try:
+            raw = execute_tool(body.tool_slug, body.arguments)
+            rows = normalize_rows(raw, body.row_mapping or None)
+            return {"raw": raw, "rows": rows, "row_count": len(rows)}
+        except Exception as exc:
+            raise HTTPException(502, f"Composio error: {exc}") from exc
 
     @app.post("/agents", status_code=201)
     def create_agent(body: CreateAgentRequest, session=Depends(get_session)):
@@ -122,6 +204,26 @@ def create_app(*, session_factory, llm: LlmClient, runtime: Runtime,
         agent.status = "paused"
         session.commit()
         return _agent_out(agent)
+
+    @app.delete("/agents/{agent_id}", status_code=204)
+    def delete_agent(agent_id: int, session=Depends(get_session)):
+        agent = get_agent(agent_id, session)
+        finding_ids = list(
+            session.scalars(select(Finding.id).where(Finding.agent_id == agent_id))
+        )
+        if finding_ids:
+            session.execute(
+                delete(Notification).where(Notification.finding_id.in_(finding_ids))
+            )
+            session.execute(delete(Action).where(Action.finding_id.in_(finding_ids)))
+            session.execute(delete(Task).where(Task.finding_id.in_(finding_ids)))
+        session.execute(delete(Action).where(Action.agent_id == agent_id))
+        session.execute(delete(Task).where(Task.agent_id == agent_id))
+        session.execute(delete(Finding).where(Finding.agent_id == agent_id))
+        session.execute(delete(Run).where(Run.agent_id == agent_id))
+        session.delete(agent)
+        session.commit()
+        return Response(status_code=204)
 
     @app.post("/agents/{agent_id}/run")
     def run_now(agent_id: int, session=Depends(get_session)):
@@ -209,7 +311,8 @@ def create_app(*, session_factory, llm: LlmClient, runtime: Runtime,
             action.params = {**action.params, **body.params}  # edited params win
             session.flush()
         try:
-            execute_action(session, action, runtime.executors(session),
+            agent = session.get(Agent, action.agent_id)
+            execute_action(session, action, runtime.executors(session, owner=agent.owner if agent else None),
                            now=datetime.now(timezone.utc), decided_by="user")
         except ActionStateError as exc:
             raise HTTPException(409, str(exc))
@@ -249,6 +352,7 @@ def create_app(*, session_factory, llm: LlmClient, runtime: Runtime,
 
 def create_default_app() -> FastAPI:
     """uvicorn factory entrypoint: uvicorn "aunix.api:create_default_app" --factory"""
+    load_dotenv()  # OPENAI_API_KEY is read by the SDK, not Settings fields
     settings = Settings()
     engine = make_engine(settings.database_url)
     Base.metadata.create_all(engine)
@@ -258,4 +362,5 @@ def create_default_app() -> FastAPI:
         runtime=Runtime(settings),
         upload_dir=Path(settings.upload_dir),
         cors_origins=settings.api_cors_origins,
+        settings=settings,
     )

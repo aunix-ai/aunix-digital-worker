@@ -53,6 +53,11 @@ class RuleBasedActionPlanner:
                 op = perm.ops[0] if perm.ops else "add_note"
                 params = {"op": op, "note": f"Aunix: {finding.summary}",
                           "deal_id": _row(finding).get("hubspot_id")}
+            elif perm.type == "composio":
+                params = {
+                    "tool_slug": perm.tool_slug,
+                    "arguments": dict(perm.argument_template),
+                }
             elif perm.type == "task":
                 params = {"title": f"Follow up: {finding.summary}"}
             else:  # resolve
@@ -67,6 +72,7 @@ permitted type, draft one action with realistic, specific content:
 - email: a professional `subject` and `body` to the relevant party (and `to` if you can \
 infer the address from the finding data).
 - hubspot: a concise `note` (<= 300 chars) plus the `op` and `deal_id`.
+- composio: concrete `arguments` for the permitted `tool_slug`.
 - task: a one-line `title`.
 - resolve: no params.
 Only draft the permitted types. Keep content grounded in the finding's data."""

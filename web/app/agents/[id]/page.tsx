@@ -1,6 +1,7 @@
 "use client";
 import { use, useCallback, useEffect, useState } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { api } from "@/lib/api";
 import type { AgentOut, RunOut } from "@/lib/types";
 import { PlanSummary } from "@/components/PlanSummary";
@@ -9,6 +10,7 @@ import { Button, ErrorNote, Panel, SectionLabel, SkeletonRows } from "@/componen
 
 export default function AgentPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = use(params);
+  const router = useRouter();
   const agentId = Number(id);
   const [agent, setAgent] = useState<AgentOut | null>(null);
   const [runs, setRuns] = useState<RunOut[]>([]);
@@ -30,6 +32,25 @@ export default function AgentPage({ params }: { params: Promise<{ id: string }> 
     } catch (e) {
       setError(String(e));
     } finally {
+      setBusy(false);
+    }
+  }
+
+  async function remove() {
+    if (
+      !window.confirm(
+        `Delete "${agent?.spec.name}"? This removes the agent, its runs, and alert history.`,
+      )
+    ) {
+      return;
+    }
+    setBusy(true);
+    setError(null);
+    try {
+      await api.deleteAgent(agentId);
+      router.push("/");
+    } catch (e) {
+      setError(String(e));
       setBusy(false);
     }
   }
@@ -63,6 +84,9 @@ export default function AgentPage({ params }: { params: Promise<{ id: string }> 
             )}
             <Button variant="primary" onClick={() => act(() => api.runNow(agentId))} disabled={busy}>
               Run now
+            </Button>
+            <Button variant="danger" onClick={remove} disabled={busy}>
+              Delete
             </Button>
           </div>
         </div>

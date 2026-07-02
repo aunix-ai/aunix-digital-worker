@@ -9,6 +9,7 @@ const LINKS = [
   { href: "/create", label: "New agent" },
   { href: "/feed", label: "Activity" },
   { href: "/approvals", label: "Approvals" },
+  { href: "/integrations", label: "Integrations" },
 ];
 
 function isActive(pathname: string, href: string): boolean {

@@ -92,7 +92,7 @@ def test_slot_key_is_committed_atomically_with_the_run(session, tmp_path):
 
 def test_failed_run_still_claims_its_slot(session, tmp_path):
     class BoomRuntime(FixedRuntime):
-        def connectors(self, inner_session):
+        def connectors(self, inner_session, spec=None, *, owner=None):
             class Boom:
                 source_id = "simship"
 

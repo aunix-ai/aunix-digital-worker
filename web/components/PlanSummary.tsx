@@ -1,4 +1,4 @@
-import type { AgentSpec } from "@/lib/types";
+import type { AgentSpec, ComposioSource, DataSourceRef } from "@/lib/types";
 
 function scheduleText(s: AgentSpec["schedule"]): string {
   if (s.mode === "interval") return `every ${s.interval_minutes} minutes`;
@@ -9,7 +9,25 @@ function scheduleText(s: AgentSpec["schedule"]): string {
 const AUTONOMY: Record<number, string> = {
   1: "L1 — notify only",
   2: "L2 — notify and recommend actions",
+  3: "L3 — execute with your approval",
+  4: "L4 — autonomous within policy",
 };
+
+function isComposioSource(ref: DataSourceRef): ref is ComposioSource {
+  return typeof ref === "object" && ref !== null && ref.type === "composio";
+}
+
+function formatArguments(args?: Record<string, unknown> | string): string {
+  if (args == null) return "{}";
+  if (typeof args === "string") return args.trim() || "{}";
+  if (Object.keys(args).length === 0) return "{}";
+  return JSON.stringify(args);
+}
+
+function formatSourceLabel(ref: DataSourceRef): string {
+  if (typeof ref === "string") return ref;
+  return `${ref.toolkit} → ${ref.tool_slug}`;
+}
 
 function Row({ label, children }: { label: string; children: React.ReactNode }) {
   return (
@@ -30,10 +48,29 @@ export function PlanSummary({ spec }: { spec: AgentSpec }) {
       <dl className="divide-y divide-line">
         <Row label="Type">{spec.task_type}</Row>
         <Row label="Sources">
-          <span className="font-mono text-[0.8125rem] text-ink">
-            {spec.data_sources.join(" + ")}
-          </span>
+          <ul className="space-y-2">
+            {spec.data_sources.map((source, index) => (
+              <li key={index}>
+                {isComposioSource(source) ? (
+                  <div className="space-y-1">
+                    <div className="font-mono text-[0.8125rem] text-accent">
+                      {formatSourceLabel(source)}
+                    </div>
+                    <div className="text-xs text-muted">
+                      Composio tool · record key: {source.record_key ?? "id"}
+                    </div>
+                    <div className="font-mono text-[0.75rem] text-faint">
+                      arguments: {formatArguments(source.arguments)}
+                    </div>
+                  </div>
+                ) : (
+                  <span className="font-mono text-[0.8125rem] text-ink">{source}</span>
+                )}
+              </li>
+            ))}
+          </ul>
         </Row>
+
         <Row label="Schedule">{scheduleText(spec.schedule)}</Row>
 
         {spec.task_type === "monitoring" && spec.conditions && (
@@ -64,6 +101,8 @@ export function PlanSummary({ spec }: { spec: AgentSpec }) {
           {spec.notifications.channels.join(", ")}
           {spec.notifications.email_to ? (
             <span className="text-muted"> ({spec.notifications.email_to})</span>
+          ) : spec.notifications.channels.includes("email") ? (
+            <span className="text-warn"> (email address missing)</span>
           ) : null}
         </Row>
         <Row label="Autonomy">{AUTONOMY[spec.autonomy_level] ?? `L${spec.autonomy_level}`}</Row>

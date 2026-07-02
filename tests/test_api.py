@@ -64,6 +64,27 @@ def test_full_agent_lifecycle(client):
     assert client.post(f"/agents/{agent_id}/pause").json()["status"] == "paused"
 
 
+def test_delete_agent_removes_runs_and_history(client):
+    resp = client.post("/agents", json={"owner": "david",
+                                        "spec": make_spec().model_dump(mode="json")})
+    agent_id = resp.json()["id"]
+    client.post(f"/agents/{agent_id}/activate")
+    run = client.post(f"/agents/{agent_id}/run").json()
+    assert run["status"] == "succeeded"
+
+    del_resp = client.delete(f"/agents/{agent_id}")
+    assert del_resp.status_code == 204
+
+    assert client.get(f"/agents/{agent_id}").status_code == 404
+    assert client.get(f"/agents/{agent_id}/runs").status_code == 404
+    assert client.get(f"/runs/{run['id']}").status_code == 404
+    assert client.get("/agents").json() == []
+
+
+def test_delete_missing_agent_404(client):
+    assert client.delete("/agents/999").status_code == 404
+
+
 def test_invalid_spec_rejected(client):
     bad = make_spec().model_dump(mode="json")
     bad["schedule"] = {"mode": "interval"}  # missing interval_minutes

@@ -11,7 +11,7 @@ from aunix.findings import CandidateFinding, reconcile
 from aunix.models import Agent, Finding, Run
 from aunix.notifier import Notifier
 from aunix.reasoning import Reasoner
-from aunix.spec import AgentSpec
+from aunix.spec import AgentSpec, resolve_data_source_id, resolve_record_key
 
 
 def execute_run(
@@ -43,7 +43,8 @@ def execute_run(
     trace: dict = {}
     try:
         rows: list[dict] = []
-        for source in spec.data_sources:
+        for source_ref in spec.data_sources:
+            source = resolve_data_source_id(source_ref)
             if source not in connectors:
                 raise RuntimeError(f"no connector configured for data source {source!r}")
             connector = connectors[source]
@@ -61,7 +62,7 @@ def execute_run(
                 breach = evaluate(spec.conditions, row, now=now)
                 if breach:
                     breaches.append((row, breach))
-        trace["breaches"] = [str(row.get(spec.record_key)) for row, _ in breaches]
+        trace["breaches"] = [resolve_record_key(spec, row) for row, _ in breaches]
 
         insight = reasoner.reason(spec, rows, breaches)
 

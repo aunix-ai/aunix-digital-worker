@@ -7,7 +7,7 @@ from pydantic import BaseModel
 
 from aunix.conditions import Breach
 from aunix.findings import CandidateFinding
-from aunix.spec import AgentSpec
+from aunix.spec import AgentSpec, resolve_record_key
 
 
 class Insight(BaseModel):
@@ -33,7 +33,7 @@ class RuleBasedReasoner:
         return Insight(findings=self._ranked_findings(spec, rows))
 
     def _breach_findings(self, spec: AgentSpec, row: dict, breach: Breach) -> list[CandidateFinding]:
-        key = str(row.get(spec.record_key, "unknown"))
+        key = resolve_record_key(spec, row)
         if spec.conditions and spec.conditions.mode == "all":
             # all-mode breaches are one composite event; the field set is the full
             # group, so the key is stable across runs
@@ -62,11 +62,11 @@ class RuleBasedReasoner:
         ranked = sorted(rows, key=lambda r: _numeric(r.get(spec.rank_by)), reverse=True)
         return [
             CandidateFinding(
-                dedupe_key=f"rank-{i + 1}:{row.get(spec.record_key)}",
+                dedupe_key=f"rank-{i + 1}:{resolve_record_key(spec, row)}",
                 severity="info",
-                summary=f"#{i + 1}: {row.get(spec.record_key)} ({spec.rank_by}={row.get(spec.rank_by)})",
+                summary=f"#{i + 1}: {resolve_record_key(spec, row)} ({spec.rank_by}={row.get(spec.rank_by)})",
                 recommendation="Prioritize outreach.",
-                source_ref=f"{spec.data_sources[0]}://{row.get(spec.record_key)}",
+                source_ref=f"{spec.data_sources[0]}://{resolve_record_key(spec, row)}",
                 details={"row": _jsonable(row)},
             )
             for i, row in enumerate(ranked[: spec.top_n])

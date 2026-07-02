@@ -43,12 +43,12 @@ def run_agent_once(session_factory, agent_id: int, runtime, *,
                            else getattr(runtime, "actions_enabled", False))
         ttl = rt_settings.action_ttl_hours if rt_settings else 24
         run = execute_run(
-            session, agent, runtime.connectors(session), runtime.reasoner,
+            session, agent, runtime.connectors(session, spec, owner=agent.owner), runtime.reasoner,
             runtime.notifiers(session), trigger=trigger, now=now,
             slot_key=key,
             action_planner=getattr(runtime, "action_planner", None),
             actions_enabled=actions_enabled, action_ttl_hours=ttl,
-            executors=runtime.executors(session),
+            executors=runtime.executors(session, owner=agent.owner),
         )
         return run
 
@@ -84,7 +84,10 @@ def sweep_expired_actions(session_factory, *, now: datetime | None = None) -> in
 
 
 def main() -> None:
+    from dotenv import load_dotenv
+
     logging.basicConfig(level=logging.INFO)
+    load_dotenv()
     settings = Settings()
     engine = make_engine(settings.database_url)
     Base.metadata.create_all(engine)
