@@ -20,10 +20,25 @@ _OPS = {
 }
 
 
+def _resolve_row_field(row: dict, field: str) -> str | None:
+    """Match condition field to row keys (exact, case-insensitive, underscore-insensitive)."""
+    if field in row:
+        return field
+    lower = field.lower()
+    compact = lower.replace("_", "")
+    for key in row:
+        if key.lower() == lower:
+            return key
+        if key.lower().replace("_", "") == compact:
+            return key
+    return None
+
+
 def _matches(cond: Condition, row: dict, now: datetime) -> bool:
-    if cond.field not in row:
+    field = _resolve_row_field(row, cond.field)
+    if field is None:
         return False
-    actual = row[cond.field]
+    actual = row[field]
     try:
         if cond.operator == "stale_hours":
             return now - actual > timedelta(hours=float(cond.value))

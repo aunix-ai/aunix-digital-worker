@@ -1,3 +1,25 @@
+export interface ActionPermission {
+  type: "email" | "hubspot" | "task" | "resolve" | "composio";
+  to_field?: string | null;
+  to?: string | null;
+  ops?: Array<"add_note" | "set_property">;
+  tool_slug?: string | null;
+  argument_template?: Record<string, unknown> | string;
+}
+
+export interface ActionPolicy {
+  email_auto?: boolean;
+  email_to_domains?: string[];
+  hubspot_auto?: boolean;
+  hubspot_ops?: string[];
+  composio_auto?: boolean;
+  composio_tool_slugs?: string[];
+  task_auto?: boolean;
+  resolve_auto?: boolean;
+  per_run?: number;
+  per_day?: number;
+}
+
 export interface ComposioSource {
   type: "composio";
   toolkit: string;
@@ -19,6 +41,8 @@ export interface AgentSpec {
   schedule: { mode: "interval" | "daily" | "on_demand"; interval_minutes?: number | null; daily_time?: string | null };
   notifications: { channels: string[]; email_to?: string | null };
   autonomy_level: number;
+  actions?: ActionPermission[];
+  policy?: ActionPolicy | null;
   reasoning_instructions?: string | null;
   rank_by?: string | null;
   top_n: number;
@@ -48,12 +72,36 @@ export interface ClarifyingQuestion {
   choices: string[];
   kind: "text" | "email";
 }
+export type CompileSessionStatus =
+  | "interpreting"
+  | "validating"
+  | "awaiting_probe_approval"
+  | "probing"
+  | "judging"
+  | "awaiting_confirmation"
+  | "failed";
+
+export interface ValidationReport {
+  passed: boolean;
+  errors: string[];
+  warnings: string[];
+}
+
+export interface JudgeVerdict {
+  verdict: "pass" | "fail" | "revise";
+  issues: string[];
+}
+
 export interface CompileResult {
+  status?: CompileSessionStatus;
   spec: AgentSpec | null;
   questions: ClarifyingQuestion[];
+  validation_report?: ValidationReport;
+  judge?: JudgeVerdict;
   composio_context?: {
     connections?: Array<{ slug: string; name: string; is_connected: boolean; status: string }>;
     tool_search?: { results?: Array<{ primary_tool_slugs?: string[]; use_case?: string }> };
+    probe_rows?: unknown[];
     tool_search_error?: string;
     error?: string;
   } | null;

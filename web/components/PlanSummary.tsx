@@ -1,4 +1,4 @@
-import type { AgentSpec, ComposioSource, DataSourceRef } from "@/lib/types";
+import type { AgentSpec, ComposioSource, DataSourceRef, ValidationReport } from "@/lib/types";
 
 function scheduleText(s: AgentSpec["schedule"]): string {
   if (s.mode === "interval") return `every ${s.interval_minutes} minutes`;
@@ -38,7 +38,15 @@ function Row({ label, children }: { label: string; children: React.ReactNode }) 
   );
 }
 
-export function PlanSummary({ spec }: { spec: AgentSpec }) {
+export function PlanSummary({
+  spec,
+  probeRows,
+  validation,
+}: {
+  spec: AgentSpec;
+  probeRows?: unknown[];
+  validation?: ValidationReport;
+}) {
   return (
     <div className="overflow-hidden rounded-[var(--radius-panel)] border border-line bg-surface">
       <div className="border-b border-line px-5 py-4">
@@ -106,6 +114,42 @@ export function PlanSummary({ spec }: { spec: AgentSpec }) {
           ) : null}
         </Row>
         <Row label="Autonomy">{AUTONOMY[spec.autonomy_level] ?? `L${spec.autonomy_level}`}</Row>
+
+        {spec.actions && spec.actions.length > 0 && (
+          <Row label="Actions">
+            <ul className="space-y-1 font-mono text-[0.8125rem]">
+              {spec.actions.map((a, i) => (
+                <li key={i}>{a.type}{a.tool_slug ? ` → ${a.tool_slug}` : ""}</li>
+              ))}
+            </ul>
+          </Row>
+        )}
+
+        {spec.policy && (
+          <Row label="L4 policy">
+            <span className="font-mono text-[0.75rem] text-faint">
+              {JSON.stringify(spec.policy)}
+            </span>
+          </Row>
+        )}
+
+        {validation && !validation.passed && validation.errors.length > 0 && (
+          <Row label="Validation">
+            <ul className="space-y-1 text-xs text-warn">
+              {validation.errors.map((e) => (
+                <li key={e}>{e}</li>
+              ))}
+            </ul>
+          </Row>
+        )}
+
+        {probeRows && probeRows.length > 0 && (
+          <Row label="Probe sample">
+            <pre className="max-h-40 overflow-auto font-mono text-[0.7rem] text-faint">
+              {JSON.stringify(probeRows.slice(0, 3), null, 2)}
+            </pre>
+          </Row>
+        )}
       </dl>
     </div>
   );

@@ -86,14 +86,49 @@ def sweep_expired_actions(session_factory, *, now: datetime | None = None) -> in
 def main() -> None:
     from dotenv import load_dotenv
 
-    logging.basicConfig(level=logging.INFO)
+    # APScheduler configures the root logger at WARNING on import, which makes
+    # a plain basicConfig() a no-op — force=True restores INFO startup logs.
+    logging.basicConfig(
+        level=logging.INFO,
+        format="%(asctime)s [%(levelname)s] %(message)s",
+        force=True,
+    )
+    logging.getLogger("apscheduler").setLevel(logging.WARNING)
+    # a plain basicConfig() a no-op — force=True restores INFO startup logs.
+    logging.basicConfig(
+        level=logging.INFO,
+        format="%(asctime)s [%(levelname)s] %(message)s",
+        force=True,
+    )
     load_dotenv()
     settings = Settings()
     engine = make_engine(settings.database_url)
     Base.metadata.create_all(engine)
     session_factory = make_session_factory(engine)
     runtime = Runtime(settings)
-    scheduler = BlockingScheduler()
+    agent_jobs = sum(1 for j in scheduler.get_jobs() if j.id.startswith("agent-"))
+    logger.info(
+        "worker started (%d active agent job(s); press Ctrl+C to stop)",
+        agent_jobs,
+    )
+    schedule_agents(scheduler, session_factory, runtime)
+    scheduler.add_job(schedule_agents, IntervalTrigger(minutes=1),
+                      args=[scheduler, session_factory, runtime], id="rescan")
+    scheduler.add_job(sweep_expired_actions, IntervalTrigger(minutes=5),
+                      args=[session_factory], id="expire-actions")
+    logger.info("worker started")
+    schedule_agents(scheduler, session_factory, runtime)
+    scheduler.add_job(schedule_agents, IntervalTrigger(minutes=1),
+                      args=[scheduler, session_factory, runtime], id="rescan")
+    scheduler.add_job(sweep_expired_actions, IntervalTrigger(minutes=5),
+                      args=[session_factory], id="expire-actions")
+    logger.info("worker started")
+    schedule_agents(scheduler, session_factory, runtime)
+    scheduler.add_job(schedule_agents, IntervalTrigger(minutes=1),
+                      args=[scheduler, session_factory, runtime], id="rescan")
+    scheduler.add_job(sweep_expired_actions, IntervalTrigger(minutes=5),
+                      args=[session_factory], id="expire-actions")
+    logger.info("worker started")
     schedule_agents(scheduler, session_factory, runtime)
     scheduler.add_job(schedule_agents, IntervalTrigger(minutes=1),
                       args=[scheduler, session_factory, runtime], id="rescan")

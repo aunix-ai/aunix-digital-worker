@@ -1,8 +1,20 @@
 "use client";
-import { useState } from "react";
+import { useCallback, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { api } from "@/lib/api";
-import type { AgentSpec, ClarifyingQuestion, CompileResult } from "@/lib/types";
+import { bffApi, isBffEnabled } from "@/lib/bff-api";
+import {
+  flowopsCompile,
+  type ComposioExecApprovalPayload,
+  type UserQuestionPayload,
+} from "@/lib/flowops-compile";
+import type {
+  AgentSpec,
+  CompileResult,
+  CompileSessionStatus,
+  JudgeVerdict,
+  ValidationReport,
+} from "@/lib/types";
 import { PlanSummary } from "@/components/PlanSummary";
 import { Button, ErrorNote, PageTitle, Panel } from "@/components/ui";
 
@@ -11,71 +23,235 @@ const EXAMPLES = [
   "Analyze the daily sales report and send me the top 5 leads over $1M every morning at 8am.",
 ];
 
+const STATUS_LABEL: Record<CompileSessionStatus, string> = {
+  interpreting: "Interpreting your request…",
+  validating: "Validating plan…",
+  awaiting_probe_approval: "Waiting for probe approval…",
+  probing: "Running sample fetch…",
+  judging: "Reviewing plan quality…",
+  awaiting_confirmation: "Ready to confirm",
+  failed: "Plan needs revision",
+};
+
+function ValidationChecklist({
+  validation,
+  judge,
+}: {
+  validation?: ValidationReport;
+  judge?: JudgeVerdict;
+}) {
+  if (!validation && !judge) return null;
+  return (
+    <Panel className="px-5 py-4 text-sm">
+      <p className="font-medium text-ink">Pre-confirm checklist</p>
+      <ul className="mt-2 space-y-1 text-xs">
+        <li className={validation?.passed ? "text-accent" : "text-warn"}>
+          {validation?.passed ? "✓" : "✗"} Schema validation
+          {validation?.errors?.length ? ` — ${validation.errors.join("; ")}` : ""}
+        </li>
+        {validation?.warnings?.map((w) => (
+          <li key={w} className="text-muted">
+            ⚠ {w}
+          </li>
+        ))}
+        <li
+          className={
+            judge?.verdict === "pass" ? "text-accent" : judge ? "text-warn" : "text-faint"
+          }
+        >
+          {judge?.verdict === "pass" ? "✓" : judge ? "✗" : "…"} LLM judge
+          {judge?.issues?.length ? ` — ${judge.issues.join("; ")}` : ""}
+        </li>
+      </ul>
+    </Panel>
+  );
+}
+
 export default function CreatePage() {
   const router = useRouter();
   const [text, setText] = useState("");
-  // answer lines accumulated across clarifying rounds, folded back into the prompt
-  const [history, setHistory] = useState<string[]>([]);
-  const [busy, setBusy] = useState(false);
+  const [isCompiling, setIsCompiling] = useState(false);
+  const [approvalBusy, setApprovalBusy] = useState(false);
+  const [status, setStatus] = useState<CompileSessionStatus | null>(null);
+  const [lastTool, setLastTool] = useState<string | null>(null);
   const [spec, setSpec] = useState<AgentSpec | null>(null);
-  const [composioContext, setComposioContext] = useState<CompileResult["composio_context"]>(null);
-  const [questions, setQuestions] = useState<ClarifyingQuestion[]>([]);
-  const [answers, setAnswers] = useState<Record<string, string>>({});
+  const [compileMeta, setCompileMeta] = useState<CompileResult | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [pendingProbe, setPendingProbe] = useState<ComposioExecApprovalPayload | null>(null);
+  const [pendingQuestion, setPendingQuestion] = useState<UserQuestionPayload | null>(null);
+  const [questionAnswer, setQuestionAnswer] = useState("");
+  const sessionIdRef = useRef<string | null>(null);
 
-  async function interpret(baseHistory: string[], extraLines: string[]) {
-    setBusy(true);
+  const canConfirm =
+    Boolean(spec) &&
+    compileMeta?.validation_report?.passed === true &&
+    compileMeta?.judge?.verdict === "pass" &&
+    compileMeta?.status === "awaiting_confirmation";
+
+  const runCompile = useCallback(async (prompt: string) => {
+    setIsCompiling(true);
     setError(null);
     setSpec(null);
-    setComposioContext(null);
-    setQuestions([]);
-    const all = [...baseHistory, ...extraLines];
-    const prompt = all.length ? `${text}\n\nAdditional details:\n${all.join("\n")}` : text;
+    setCompileMeta(null);
+    setPendingProbe(null);
+    setPendingQuestion(null);
+    setStatus("interpreting");
+
     try {
-      const result = await api.compile(prompt);
-      setHistory(all);
+      const result = await flowopsCompile.start(prompt, {
+        onSession: (id) => {
+          sessionIdRef.current = id;
+        },
+        onStatus: setStatus,
+        onToolCall: setLastTool,
+        onComposioApproval: (payload) => {
+          setStatus("awaiting_probe_approval");
+          setPendingProbe(payload);
+        },
+        onUserQuestion: setPendingQuestion,
+      });
+
+      setCompileMeta(result);
       setSpec(result.spec);
-      setComposioContext(result.composio_context ?? null);
-      setQuestions(result.questions);
-      setAnswers({});
+      setStatus(result.status ?? null);
+    } catch (e) {
+      setError(String(e));
+      setStatus("failed");
+    } finally {
+      setIsCompiling(false);
+      setPendingProbe(null);
+      setPendingQuestion(null);
+    }
+  }, []);
+
+  async function respondProbe(approved: boolean) {
+    if (!pendingProbe || approvalBusy) return;
+    setApprovalBusy(true);
+    setError(null);
+    try {
+      await flowopsCompile.approveComposioExec(
+        pendingProbe.sessionId,
+        pendingProbe.approvalId,
+        approved,
+      );
+      setPendingProbe(null);
+      if (approved) setStatus("probing");
     } catch (e) {
       setError(String(e));
     } finally {
-      setBusy(false);
+      setApprovalBusy(false);
     }
   }
 
-  function answerLines(): string[] {
-    return questions
-      .map((q) => {
-        const a = answers[q.text]?.trim();
-        return a ? `- ${q.text} ${a}` : null;
-      })
-      .filter((x): x is string => x !== null);
+  async function respondQuestion() {
+    if (!pendingQuestion || !questionAnswer.trim() || approvalBusy) return;
+    setApprovalBusy(true);
+    setError(null);
+    try {
+      const isOption = pendingQuestion.options.includes(questionAnswer.trim());
+      await flowopsCompile.answerUserQuestion(pendingQuestion.sessionId, pendingQuestion.questionId, {
+        selectedOption: isOption ? questionAnswer.trim() : null,
+        customAnswer: isOption ? null : questionAnswer.trim(),
+      });
+      setPendingQuestion(null);
+      setQuestionAnswer("");
+    } catch (e) {
+      setError(String(e));
+    } finally {
+      setApprovalBusy(false);
+    }
   }
 
   async function confirm() {
-    if (!spec) return;
-    setBusy(true);
+    if (!spec || !canConfirm) return;
+    setIsCompiling(true);
     try {
-      const agent = await api.createAgent("me", spec);
-      await api.activate(agent.id);
+      if (isBffEnabled()) {
+        const agent = await bffApi.createAgent("flowops-demo-user", spec);
+        await bffApi.activate(agent.id);
+      } else {
+        const agent = await api.createAgent("me", spec);
+        await api.activate(agent.id);
+      }
       router.push("/");
     } catch (e) {
       setError(String(e));
-      setBusy(false);
+      setIsCompiling(false);
     }
   }
 
-  const answeredCount = answerLines().length;
+  async function revise() {
+    const sessionId = sessionIdRef.current;
+    if (!sessionId) {
+      setError("No compile session — click Interpret again to start a new compile.");
+      return;
+    }
+
+    const validationHints = compileMeta?.validation_report?.errors ?? [];
+    const judgeHints = compileMeta?.judge?.issues ?? [];
+    const hints = [...validationHints, ...judgeHints];
+    const probeFields =
+      compileMeta?.composio_context?.probe_rows &&
+      Array.isArray(compileMeta.composio_context.probe_rows) &&
+      compileMeta.composio_context.probe_rows[0] &&
+      typeof compileMeta.composio_context.probe_rows[0] === "object"
+        ? Object.keys(compileMeta.composio_context.probe_rows[0] as object)
+            .filter((k) => k !== "attributes")
+            .join(", ")
+        : "Id, LastModifiedDate, Name";
+
+    const defaultRevision =
+      hints.length > 0
+        ? [
+            "Fix the plan based on validation failures:",
+            ...hints.map((h) => `- ${h}`),
+            "",
+            `Use exact probe row field names: ${probeFields}.`,
+            'If SOQL already filters by LastModifiedDate / date window, set condition to: Id ne "".',
+            "Do NOT use stale_hours or row_mapping aliases like last_modified_date.",
+          ].join("\n")
+        : text.trim();
+
+    // When validation failed, always send fix hints — not the original prompt again.
+    const revisionMessage = hints.length > 0 ? defaultRevision : text.trim() || defaultRevision;
+
+    if (!revisionMessage) {
+      setError("Add revision notes in the text box, or edit your prompt, then click Revise.");
+      return;
+    }
+
+    setIsCompiling(true);
+    setError(null);
+    setSpec(null);
+    setCompileMeta(null);
+    try {
+      const result = await flowopsCompile.message(sessionId, revisionMessage, {
+        onStatus: setStatus,
+        onToolCall: setLastTool,
+        onComposioApproval: (payload) => {
+          setStatus("awaiting_probe_approval");
+          setPendingProbe(payload);
+        },
+        onUserQuestion: setPendingQuestion,
+      });
+      setCompileMeta(result);
+      setSpec(result.spec);
+      setStatus(result.status ?? null);
+    } catch (e) {
+      setError(String(e));
+    } finally {
+      setIsCompiling(false);
+      setPendingProbe(null);
+      setPendingQuestion(null);
+    }
+  }
 
   return (
     <div className="space-y-6">
       <div>
         <PageTitle>New digital worker</PageTitle>
         <p className="mt-1.5 max-w-prose text-sm text-muted">
-          Describe what to watch or analyze. Aunix interprets it into a structured agent and
-          shows you the plan before anything runs.
+          Describe what to watch or analyze. FlowOps compiles a validated plan before activation.
         </p>
       </div>
 
@@ -86,17 +262,17 @@ export default function CreatePage() {
           rows={4}
           spellCheck={false}
           className="w-full resize-y rounded-[var(--radius-panel)] border border-line bg-surface px-4 py-3 text-sm text-ink placeholder:text-faint transition-colors focus:border-line2"
-          placeholder="e.g. Watch my active POs and alert me when a delivery date slips…"
+          placeholder="e.g. Watch Salesforce opportunities updated in the last 5 days…"
         />
         <div className="flex flex-wrap items-center gap-2">
           <Button
-            onClick={() => interpret([], [])}
+            onClick={() => runCompile(text)}
             variant="primary"
-            disabled={busy || text.trim().length === 0}
+            disabled={isCompiling || text.trim().length === 0}
           >
-            {busy ? "Interpreting…" : "Interpret"}
+            {isCompiling ? "Compiling…" : "Interpret"}
           </Button>
-          {!spec && questions.length === 0 && !busy && (
+          {!spec && !isCompiling && (
             <div className="flex flex-wrap gap-1.5">
               {EXAMPLES.map((ex, i) => (
                 <button
@@ -112,98 +288,96 @@ export default function CreatePage() {
         </div>
       </div>
 
-      {error && <ErrorNote message={error} />}
+      {(status || lastTool) && (isCompiling || pendingProbe || pendingQuestion) && (
+        <Panel className="px-5 py-3 text-sm text-muted">
+          {status ? STATUS_LABEL[status] : "Working…"}
+          {lastTool ? <span className="ml-2 font-mono text-xs text-faint">({lastTool})</span> : null}
+        </Panel>
+      )}
 
-      {questions.length > 0 && (
-        <Panel className="rise overflow-hidden">
-          <div className="flex items-center gap-2 border-b border-line px-5 py-3.5">
-            <span className="size-1.5 rounded-full bg-warn" />
-            <p className="text-sm font-medium text-ink">A few details to pin down</p>
-          </div>
-          <div className="divide-y divide-line">
-            {questions.map((q) => (
-              <fieldset key={q.text} className="px-5 py-4">
-                <legend className="text-sm text-ink">{q.text}</legend>
-                <div className="mt-2.5">
-                  {q.choices.length > 0 ? (
-                    <div className="flex flex-wrap gap-1.5">
-                      {q.choices.map((choice) => {
-                        const selected = answers[q.text] === choice;
-                        return (
-                          <button
-                            key={choice}
-                            type="button"
-                            aria-pressed={selected}
-                            onClick={() =>
-                              setAnswers((a) => ({ ...a, [q.text]: choice }))
-                            }
-                            className={`rounded-full border px-3 py-1 text-xs transition-colors ${
-                              selected
-                                ? "border-accent bg-accent/12 text-accent"
-                                : "border-line text-muted hover:border-line2 hover:text-ink"
-                            }`}
-                          >
-                            {choice}
-                          </button>
-                        );
-                      })}
-                    </div>
-                  ) : (
-                    <input
-                      type={q.kind === "email" ? "email" : "text"}
-                      value={answers[q.text] ?? ""}
-                      onChange={(e) =>
-                        setAnswers((a) => ({ ...a, [q.text]: e.target.value }))
-                      }
-                      placeholder={q.kind === "email" ? "name@company.com" : "Your answer"}
-                      className="w-full max-w-md rounded-md border border-line bg-bg px-3 py-2 text-sm text-ink placeholder:text-faint transition-colors focus:border-line2"
-                    />
-                  )}
-                </div>
-              </fieldset>
-            ))}
-          </div>
-          <div className="flex flex-wrap items-center gap-3 border-t border-line px-5 py-4">
-            <Button onClick={() => interpret(history, answerLines())} variant="primary" disabled={busy}>
-              {busy ? "Interpreting…" : "Interpret with answers"}
+      {pendingProbe && (
+        <Panel className="space-y-3 px-5 py-4">
+          <p className="text-sm font-medium text-ink">Approve live data probe</p>
+          <p className="text-xs text-muted">{pendingProbe.reason}</p>
+          <p className="font-mono text-xs text-ink">{pendingProbe.toolSlug}</p>
+          <pre className="overflow-x-auto rounded-md bg-bg p-3 font-mono text-[0.7rem] text-faint">
+            {JSON.stringify(pendingProbe.arguments, null, 2)}
+          </pre>
+          <div className="flex gap-2">
+            <Button
+              onClick={() => respondProbe(true)}
+              variant="primary"
+              disabled={approvalBusy}
+            >
+              {approvalBusy ? "Sending…" : "Accept probe"}
             </Button>
-            <span className="text-xs text-faint">
-              {answeredCount > 0
-                ? `${answeredCount} of ${questions.length} answered`
-                : "Answer what you can — Aunix fills sensible defaults for the rest."}
-            </span>
+            <Button onClick={() => respondProbe(false)} disabled={approvalBusy}>
+              Reject
+            </Button>
           </div>
         </Panel>
       )}
 
+      {pendingQuestion && (
+        <Panel className="space-y-3 px-5 py-4">
+          <p className="text-sm font-medium text-ink">{pendingQuestion.question}</p>
+          {pendingQuestion.context ? (
+            <p className="text-xs text-muted">{pendingQuestion.context}</p>
+          ) : null}
+          <div className="flex flex-wrap gap-1.5">
+            {pendingQuestion.options.map((opt) => (
+              <button
+                key={opt}
+                type="button"
+                onClick={() => setQuestionAnswer(opt)}
+                className={`rounded-full border px-3 py-1 text-xs ${
+                  questionAnswer === opt
+                    ? "border-accent bg-accent/12 text-accent"
+                    : "border-line text-muted"
+                }`}
+              >
+                {opt}
+              </button>
+            ))}
+          </div>
+          <input
+            value={questionAnswer}
+            onChange={(e) => setQuestionAnswer(e.target.value)}
+            placeholder="Or type a custom answer"
+            className="w-full max-w-md rounded-md border border-line bg-bg px-3 py-2 text-sm"
+          />
+          <Button onClick={respondQuestion} variant="primary" disabled={approvalBusy || !questionAnswer.trim()}>
+            {approvalBusy ? "Sending…" : "Submit answer"}
+          </Button>
+        </Panel>
+      )}
+
+      {error && <ErrorNote message={error} />}
+
       {spec && (
         <div className="rise space-y-4">
-          <div className="flex items-center gap-2 text-sm text-muted">
-            <span className="size-1.5 rounded-full bg-accent" />
-            Here&rsquo;s how Aunix understood it.
-          </div>
-          <PlanSummary spec={spec} />
-          {composioContext?.tool_search?.results?.[0]?.primary_tool_slugs?.length ? (
-            <Panel className="px-5 py-4 text-sm">
-              <p className="font-medium text-ink">Composio tool search (compile-time)</p>
-              <p className="mt-1 text-xs text-muted">
-                Suggested tools for this intent — verify they match the selected source above.
-              </p>
-              <ul className="mt-2 space-y-1 font-mono text-[0.8125rem] text-ink">
-                {composioContext.tool_search.results[0].primary_tool_slugs?.map((slug) => (
-                  <li key={slug}>{slug}</li>
-                ))}
-              </ul>
-            </Panel>
-          ) : null}
+          <ValidationChecklist
+            validation={compileMeta?.validation_report}
+            judge={compileMeta?.judge}
+          />
+          <PlanSummary
+            spec={spec}
+            probeRows={compileMeta?.composio_context?.probe_rows}
+            validation={compileMeta?.validation_report}
+          />
           <div className="flex gap-2">
-            <Button onClick={confirm} variant="primary" disabled={busy}>
-              {busy ? "Activating…" : "Confirm & activate"}
+            <Button onClick={confirm} variant="primary" disabled={isCompiling || !canConfirm}>
+              {isCompiling ? "Activating…" : "Confirm & activate"}
             </Button>
-            <Button onClick={() => setSpec(null)} disabled={busy}>
-              Revise description
+            <Button onClick={revise} disabled={isCompiling || !sessionIdRef.current}>
+              {isCompiling ? "Recompiling…" : "Revise & recompile"}
             </Button>
           </div>
+          {!canConfirm && spec && (
+            <p className="text-xs text-warn">
+              Confirm is disabled until validation passes and the judge approves the plan.
+            </p>
+          )}
         </div>
       )}
     </div>

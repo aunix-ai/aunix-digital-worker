@@ -69,3 +69,10 @@ def test_ne_operator():
     g = group("any", Condition(field="status", operator="ne", value="in_transit"))
     assert evaluate(g, {"status": "in_transit"}, now=NOW) is None
     assert evaluate(g, {"status": "customs_hold"}, now=NOW) is not None
+
+
+def test_field_alias_matches_row_mapping_keys():
+    """Composio row_mapping often lowercases Salesforce Id -> id."""
+    g = group("all", Condition(field="Id", operator="ne", value=""))
+    row = {"id": "006dN00000EL0PxQAL", "name": "Deal"}
+    assert evaluate(g, row, now=NOW) is not None
